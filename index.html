@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#2563eb">
+<title>Mi ERP</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%232563eb'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='Arial'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%232563eb'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='Arial'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="updateBanner">
+  <span>Hay una actualización disponible</span>
+  <button id="btnActualizarApp">Actualizar</button>
+</div>
+
+<!-- LOGIN -->
+<div id="viewLogin" class="hidden">
+  <div class="login-card">
+    <h1>Mi ERP</h1>
+    <p class="muted">Ingresá con los datos de tu local.</p>
+    <form id="formLogin">
+      <label>Usuario / Local</label>
+      <input type="text" id="loginUsuario" autocomplete="username" required>
+      <label>Contraseña</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" required>
+      <div id="loginError"></div>
+      <button type="submit" class="btn block" id="btnLogin" style="margin-top:14px;">Ingresar</button>
+    </form>
+    <div id="loginOfflineHint"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appRoot" class="hidden">
+  <header>
+    <div>
+      <h1 id="headerBizName">Mi ERP</h1>
+      <div class="biz-name" id="headerBizSub"></div>
+    </div>
+    <button id="syncIndicator" type="button">Sincronizado</button>
+  </header>
+
+  <nav class="nav-desktop">
+    <button data-view="dashboard">Inicio</button>
+    <button data-view="productos">Productos</button>
+    <button data-view="nuevaBoleta" class="active">Nueva venta</button>
+    <button data-view="boletas">Boletas</button>
+    <button data-view="clientes">Clientes</button>
+    <button data-view="gastos">Gastos</button>
+    <button data-view="reportes">Reportes</button>
+    <button data-view="config">Configuración</button>
+  </nav>
+
+  <div id="ventaAbiertaIndicator" class="venta-indicator" style="display:none;"></div>
+
+  <main>
+    <!-- DASHBOARD -->
+    <div class="view" id="view-dashboard">
+      <div class="kpis">
+        <div class="kpi"><div class="label">Ventas de hoy</div><div class="value" id="kpiVentasHoy">$0</div></div>
+        <div class="kpi"><div class="label">Operaciones hoy</div><div class="value" id="kpiOperacionesHoy">0</div></div>
+        <div class="kpi profit"><div class="label">Ganancia bruta hoy</div><div class="value" id="kpiGananciaHoy">$0</div></div>
+        <div class="kpi expense"><div class="label">Gastos del mes</div><div class="value" id="kpiGastosMes">$0</div></div>
+        <div class="kpi"><div class="label">Productos cargados</div><div class="value" id="kpiProductos">0</div></div>
+      </div>
+      <div class="panel">
+        <h2>Últimas boletas</h2>
+        <table class="stack"><thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th class="right">Total</th><th></th></tr></thead><tbody id="dashUltimasBoletas"></tbody></table>
+        <div class="empty" id="dashBoletasEmpty" style="display:none;">Todavía no armaste ninguna boleta.</div>
+      </div>
+      <div class="panel">
+        <h2>Empezar</h2>
+        <p class="muted">1) Cargá tus productos con precio de costo y venta en <b>Productos</b>. 2) Armá boletas en <b>Nueva venta</b>. 3) Registrá los gastos que no son de mercadería en <b>Gastos</b>. 4) Mirá cómo te va en <b>Reportes</b>.</p>
+        <p class="muted">Tus datos se guardan en este dispositivo y se envían solos a tu copia central cuando hay conexión.</p>
+      </div>
+    </div>
+
+    <!-- PRODUCTOS -->
+    <div class="view" id="view-productos">
+      <div class="panel">
+        <h2 id="prodFormTitle">Nuevo producto</h2>
+        <input type="hidden" id="prodId">
+        <div class="row">
+          <div><label>Nombre del producto *</label><input type="text" id="prodNombre" placeholder="Ej: Coca Cola 500ml"></div>
+          <div><label>Código / SKU (opcional)</label><input type="text" id="prodCodigo" placeholder="Ej: COC500"></div>
+          <div><label>Se vende por</label>
+            <select id="prodUnidad"><option value="unidad">Unidad</option><option value="kg">Kilo (suelto)</option></select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label id="lblProdCosto">Precio de costo *</label><input type="number" id="prodCosto" step="0.01" min="0" placeholder="0.00"></div>
+          <div><label id="lblProdPrecio">Precio de venta *</label><input type="number" id="prodPrecio" step="0.01" min="0" placeholder="0.00"></div>
+          <div><label>Categoría (opcional)</label><input type="text" id="prodCategoria" placeholder="Ej: Bebidas"></div>
+          <div id="wrapProdMargen" style="display:none;"><label>% de ganancia s/costo</label><input type="number" id="prodMargenPct" step="1" min="0" placeholder="100"></div>
+        </div>
+        <p class="muted" id="ayudaProdKg" style="display:none;">Para productos por kilo: cargá el costo por kilo y el % de ganancia que querés (el precio de venta por kilo se calcula solo). También podés escribir el precio de venta directamente y el % se recalcula.</p>
+        <div class="row" style="margin-top:14px;">
+          <button class="btn" id="btnGuardarProducto">Guardar producto</button>
+          <button class="btn secondary" id="btnCancelarProd" style="display:none;">Cancelar edición</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Catálogo de productos</h2>
+        <p class="muted desktop-only">Costo, Venta y % de ganancia se editan directo acá abajo: cambiá el valor y apretá Tab/Enter o hacé clic afuera para guardarlo.</p>
+        <div class="search-row row" style="align-items:center;">
+          <input type="text" id="prodBuscar" placeholder="Buscar por nombre, código o categoría..." style="flex:2;">
+          <label class="desktop-only" style="display:flex;align-items:center;gap:6px;flex:1;min-width:200px;"><input type="checkbox" id="prodSoloKg" style="width:auto;"> Solo venta por kilo</label>
+        </div>
+        <table class="stack">
+          <thead><tr><th>Nombre</th><th>Código</th><th>Categoría</th><th>Unidad</th><th class="right">Costo</th><th class="right">Venta</th><th class="right">% s/costo</th><th class="right">Margen</th><th></th></tr></thead>
+          <tbody id="tablaProductos"></tbody>
+        </table>
+        <div class="empty" id="productosEmpty" style="display:none;">No hay productos cargados todavía.</div>
+      </div>
+    </div>
+
+    <!-- NUEVA VENTA -->
+    <div class="view active" id="view-nuevaBoleta">
+      <div class="panel">
+        <h2 id="nuevaBoletaTitulo">Nueva venta</h2>
+        <div class="row" style="margin-bottom:2px;">
+          <div class="muted" id="resumenVentaHoy" style="flex:2;"></div>
+          <div class="muted desktop-only" id="infoUltimaVenta" style="flex:2;text-align:right;"></div>
+        </div>
+        <div class="row">
+          <div><label>Fecha</label><input type="date" id="boletaFecha"></div>
+          <div style="position:relative;">
+            <label>Cliente (opcional)</label>
+            <input type="text" id="boletaCliente" list="clientesDatalist" placeholder="Nombre del cliente" autocomplete="off">
+            <datalist id="clientesDatalist"></datalist>
+          </div>
+          <div><label>N° de boleta</label><input type="text" id="boletaNumeroPreview" disabled></div>
+        </div>
+
+        <label style="margin-top:16px;">Agregar producto</label>
+        <div class="row" style="align-items:end;">
+          <div style="flex:3;position:relative;">
+            <input type="text" id="buscadorProducto" placeholder="Escribí para buscar por nombre, código o categoría..." autocomplete="off">
+            <input type="hidden" id="selectorProductoId">
+            <div id="resultadosProductoBoleta" class="autocomplete-list"></div>
+          </div>
+          <div style="flex:1;"><label id="lblItemCantidad" style="margin-top:0;">Cant.</label><input type="number" id="itemCantidad" min="0.001" step="0.001" value="1" placeholder="Cant."></div>
+          <div style="flex:1;"><label id="lblItemPrecio" style="margin-top:0;">Precio unit.</label><input type="number" id="itemPrecio" min="0" step="0.01" placeholder="Precio unit."></div>
+          <div style="flex:0 0 auto;"><button class="btn secondary" id="btnAgregarItem">Agregar</button></div>
+        </div>
+        <p class="muted desktop-only">También podés cargar un ítem libre (que no esté en el catálogo).</p>
+        <div class="row" style="align-items:end;">
+          <div style="flex:3;"><input type="text" id="itemLibreNombre" placeholder="Descripción del ítem libre"></div>
+          <div style="flex:1;"><input type="number" id="itemLibreCantidad" min="1" value="1" placeholder="Cant."></div>
+          <div style="flex:1;"><input type="number" id="itemLibrePrecio" min="0" step="0.01" placeholder="Precio unit."></div>
+          <div style="flex:0 0 auto;"><button class="btn secondary" id="btnAgregarItemLibre">Agregar</button></div>
+        </div>
+
+        <table class="items-table" style="margin-top:16px;">
+          <thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio</th><th class="right">Subtotal</th><th></th></tr></thead>
+          <tbody id="tablaItemsBoleta"></tbody>
+          <tfoot><tr class="totalrow"><td colspan="3">Total</td><td class="right" id="totalBoleta">$0</td><td></td></tr></tfoot>
+        </table>
+        <div class="empty" id="itemsEmpty">Todavía no agregaste ítems.</div>
+
+        <div class="row" style="margin-top:16px;align-items:center;">
+          <button class="btn" id="btnGuardarBoleta">FINALIZAR VENTA</button>
+          <button class="btn secondary desktop-only" id="btnGuardarImprimirBoleta">FINALIZAR E IMPRIMIR / PDF</button>
+          <button class="btn danger" id="btnVaciarBoleta">DESCARTAR VENTA</button>
+          <span class="muted desktop-only" style="flex:0 0 auto;">F2 Nueva venta · F4 Finalizar</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOLETAS -->
+    <div class="view" id="view-boletas">
+      <div class="panel">
+        <h2>Historial de boletas</h2>
+        <div class="filter-bar">
+          <div><label>Desde</label><input type="date" id="boletasDesde"></div>
+          <div><label>Hasta</label><input type="date" id="boletasHasta"></div>
+          <div style="flex:2;"><label>Buscar cliente</label><input type="text" id="boletasBuscar"></div>
+          <div><button class="btn secondary" id="btnLimpiarFiltroBoletas">Limpiar filtro</button></div>
+        </div>
+        <table class="stack"><thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th class="right">Costo</th><th class="right">Total</th><th class="right">Ganancia</th><th></th></tr></thead><tbody id="tablaBoletas"></tbody></table>
+        <div class="empty" id="boletasEmpty" style="display:none;">No hay boletas para este filtro.</div>
+      </div>
+    </div>
+
+    <!-- CLIENTES -->
+    <div class="view" id="view-clientes">
+      <div class="panel">
+        <h2>Clientes</h2>
+        <p class="muted">Se guardan solos a medida que cargás el nombre del cliente en una venta. Acá podés completarles el teléfono o la dirección.</p>
+        <div class="search-row"><input type="text" id="clienteBuscar" placeholder="Buscar por nombre..."></div>
+        <table class="stack"><thead><tr><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th class="right">Compras</th><th class="right">Total comprado</th><th>Última compra</th><th></th></tr></thead><tbody id="tablaClientes"></tbody></table>
+        <div class="empty" id="clientesEmpty" style="display:none;">Todavía no se cargó ningún cliente.</div>
+      </div>
+    </div>
+
+    <!-- GASTOS -->
+    <div class="view" id="view-gastos">
+      <div class="panel">
+        <h2 id="gastoFormTitle">Nuevo gasto</h2>
+        <input type="hidden" id="gastoId">
+        <div class="row">
+          <div><label>Fecha</label><input type="date" id="gastoFecha"></div>
+          <div><label>Categoría</label>
+            <input type="text" id="gastoCategoria" list="categoriasGasto" placeholder="Ej: Alquiler, Sueldos, Servicios...">
+            <datalist id="categoriasGasto">
+              <option value="Alquiler"><option value="Sueldos"><option value="Servicios (luz/agua/internet)">
+              <option value="Transporte/Flete"><option value="Mantenimiento"><option value="Impuestos y tasas"><option value="Otros">
+            </datalist>
+          </div>
+          <div><label>Monto</label><input type="number" id="gastoMonto" step="0.01" min="0" placeholder="0.00"></div>
+        </div>
+        <label>Descripción (opcional)</label>
+        <textarea id="gastoDescripcion" rows="2" placeholder="Detalle del gasto"></textarea>
+        <div class="row" style="margin-top:14px;">
+          <button class="btn" id="btnGuardarGasto">Guardar gasto</button>
+          <button class="btn secondary" id="btnCancelarGasto" style="display:none;">Cancelar edición</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Historial de gastos</h2>
+        <div class="filter-bar">
+          <div><label>Desde</label><input type="date" id="gastosDesde"></div>
+          <div><label>Hasta</label><input type="date" id="gastosHasta"></div>
+          <div><button class="btn secondary" id="btnLimpiarFiltroGastos">Limpiar filtro</button></div>
+        </div>
+        <table class="stack"><thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th class="right">Monto</th><th></th></tr></thead>
+          <tbody id="tablaGastos"></tbody>
+          <tfoot><tr class="totalrow"><td colspan="3">Total del período</td><td class="right" id="totalGastosFiltro">$0</td><td></td></tr></tfoot>
+        </table>
+        <div class="empty" id="gastosEmpty" style="display:none;">No hay gastos para este filtro.</div>
+      </div>
+    </div>
+
+    <!-- REPORTES -->
+    <div class="view" id="view-reportes">
+      <div class="panel">
+        <h2>Reporte de ventas y ganancias</h2>
+        <div class="filter-bar">
+          <div><label>Período</label>
+            <select id="reportePeriodo"><option value="hoy">Hoy</option><option value="semana">Últimos 7 días</option><option value="mes" selected>Este mes</option><option value="personalizado">Personalizado</option></select>
+          </div>
+          <div id="reporteDesdeWrap" style="display:none;"><label>Desde</label><input type="date" id="reporteDesde"></div>
+          <div id="reporteHastaWrap" style="display:none;"><label>Hasta</label><input type="date" id="reporteHasta"></div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="label">Total vendido</div><div class="value" id="repVentas">$0</div></div>
+          <div class="kpi"><div class="label">Costo de mercadería vendida</div><div class="value" id="repCosto">$0</div></div>
+          <div class="kpi profit"><div class="label">Ganancia bruta</div><div class="value" id="repGananciaBruta">$0</div></div>
+          <div class="kpi expense"><div class="label">Gastos del período</div><div class="value" id="repGastos">$0</div></div>
+          <div class="kpi profit"><div class="label">Ganancia neta</div><div class="value" id="repGananciaNeta">$0</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Ventas por producto en el período</h2>
+        <table class="stack"><thead><tr><th>Producto</th><th class="right">Cantidad</th><th class="right">Total vendido</th><th class="right">Ganancia</th></tr></thead><tbody id="tablaTopProductos"></tbody></table>
+        <div class="empty" id="topProductosEmpty" style="display:none;">No hay ventas en este período.</div>
+      </div>
+      <div class="panel">
+        <h2>Ventas por cliente en el período</h2>
+        <table class="stack"><thead><tr><th>Cliente</th><th class="right">Compras</th><th class="right">Total vendido</th><th class="right">Ganancia</th></tr></thead><tbody id="tablaTopClientes"></tbody></table>
+        <div class="empty" id="topClientesEmpty" style="display:none;">No hay ventas en este período.</div>
+      </div>
+    </div>
+
+    <!-- MÁS (solo mobile) -->
+    <div class="view" id="view-mas">
+      <div class="panel">
+        <h2>Más</h2>
+        <div class="row" style="flex-direction:column;">
+          <button class="btn secondary block" data-goto="clientes">Clientes</button>
+          <button class="btn secondary block" data-goto="boletas">Historial de boletas</button>
+          <button class="btn secondary block" data-goto="gastos">Gastos</button>
+          <button class="btn secondary block" data-goto="config">Configuración</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONFIGURACIÓN -->
+    <div class="view" id="view-config">
+      <div class="panel">
+        <h2>Datos del negocio (aparecen en la boleta)</h2>
+        <div class="row">
+          <div><label>Nombre del local</label><input type="text" id="cfgNombre" placeholder="Ej: Almacén Don Bruno"></div>
+          <div><label>Teléfono</label><input type="text" id="cfgTelefono" placeholder="Ej: 11 1234-5678"></div>
+        </div>
+        <div class="row">
+          <div><label>Dirección</label><input type="text" id="cfgDireccion" placeholder="Ej: Av. Siempreviva 742"></div>
+          <div><label>CUIT / Dato adicional (opcional)</label><input type="text" id="cfgCuit" placeholder="Opcional"></div>
+        </div>
+        <label>Texto al pie de la boleta (opcional)</label>
+        <input type="text" id="cfgPie" placeholder="Ej: ¡Gracias por su compra!">
+        <div class="row" style="margin-top:14px;">
+          <div><label>Próximo número de boleta</label><input type="number" id="cfgProximoNumero" min="1"></div>
+          <div><label>Símbolo de moneda</label><input type="text" id="cfgMoneda" placeholder="$"></div>
+        </div>
+        <div class="row" style="margin-top:14px;"><button class="btn" id="btnGuardarConfig">Guardar configuración</button></div>
+      </div>
+
+      <div class="panel">
+        <h2>Sincronización</h2>
+        <p class="muted" id="cfgEstadoSync">Sincronizado.</p>
+        <p class="muted" id="cfgUltimaSync"></p>
+        <div class="row">
+          <button class="btn secondary" id="btnSincronizarAhora">Sincronizar ahora</button>
+          <button class="btn secondary" id="btnCambiarLocal">Cambiar local / Cerrar sesión</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Copia de seguridad</h2>
+        <p class="muted">Se recomienda exportar una copia seguido, además de la sincronización automática.</p>
+        <div class="row">
+          <button class="btn" id="btnExportarBackup">⬇ Exportar copia de seguridad</button>
+          <button class="btn secondary" id="btnAbrirImportarBackup">⬆ Restaurar desde copia</button>
+          <input type="file" id="inputImportarBackup" accept=".json" style="display:none;">
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Migrar desde el ERP anterior</h2>
+        <p class="muted">Importá el backup JSON exportado por tu ERP viejo. Se hace una copia de seguridad automática antes de importar si ya tenés datos cargados.</p>
+        <div class="row">
+          <button class="btn secondary" id="btnAbrirMigracion">Importar backup del ERP anterior</button>
+          <input type="file" id="inputMigracion" accept=".json" style="display:none;">
+        </div>
+        <p class="muted" id="cfgResyncPendiente" style="display:none;margin-top:10px;"></p>
+        <button class="btn secondary" id="btnEjecutarResync" style="display:none;margin-top:8px;">Reenviar datos migrados al servidor</button>
+      </div>
+
+      <div class="panel">
+        <h2>Diagnóstico</h2>
+        <p class="muted">Tocá 5 veces seguidas el título de esta sección para ver el detalle técnico (solo para soporte).</p>
+        <h3 id="diagTitleTap" style="cursor:pointer;user-select:none;">Estado técnico</h3>
+        <pre id="diagContent" style="display:none;white-space:pre-wrap;font-size:12px;background:#f8f9fb;padding:10px;border-radius:8px;"></pre>
+      </div>
+
+      <div class="panel">
+        <h2>Zona de riesgo</h2>
+        <p class="muted">Esto borra productos, boletas, clientes y gastos guardados en este dispositivo. No se puede deshacer. Exportá una copia de seguridad antes si no estás seguro.</p>
+        <button class="btn danger" id="btnBorrarTodo">Borrar todos los datos de este dispositivo</button>
+      </div>
+    </div>
+  </main>
+
+  <nav class="nav-mobile">
+    <button data-view="dashboard"><span class="ic">🏠</span>Inicio</button>
+    <button data-view="nuevaBoleta" class="active"><span class="ic">🧾</span>Venta</button>
+    <button data-view="productos"><span class="ic">📦</span>Productos</button>
+    <button data-view="reportes"><span class="ic">📊</span>Reportes</button>
+    <button data-view="mas"><span class="ic">☰</span>Más</button>
+  </nav>
+</div>
+
+<!-- Área imprimible de boleta -->
+<div id="boletaPrintArea"><div class="boleta-doc" id="boletaDocContent"></div></div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-bg" id="modalRecuperarVenta">
+  <div class="modal">
+    <h3>Hay una venta sin finalizar</h3>
+    <p id="modalRecuperarVentaInfo" class="muted"></p>
+    <div class="row" style="margin-top:16px;">
+      <button class="btn" id="btnContinuarVentaPendiente">CONTINUAR VENTA</button>
+      <button class="btn danger" id="btnDescartarVentaPendiente">DESCARTAR</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/db.js"></script>
+<script src="js/storage-service.js"></script>
+<script src="js/auth-service.js"></script>
+<script src="js/business-service.js"></script>
+<script src="js/sync-service.js"></script>
+<script src="js/migration.js"></script>
+<script src="js/ui/toast.js"></script>
+<script src="js/ui/modal.js"></script>
+<script src="js/ui/nav.js"></script>
+<script src="js/ui/login.js"></script>
+<script src="js/ui/dashboard.js"></script>
+<script src="js/ui/productos.js"></script>
+<script src="js/ui/venta.js"></script>
+<script src="js/ui/boletas.js"></script>
+<script src="js/ui/clientes.js"></script>
+<script src="js/ui/gastos.js"></script>
+<script src="js/ui/reportes.js"></script>
+<script src="js/ui/config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

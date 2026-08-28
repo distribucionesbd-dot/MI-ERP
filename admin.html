@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi ERP - Admin</title>
+<style>
+  :root{ --bg:#f4f5f7; --panel:#fff; --border:#e2e4e9; --text:#1f2430; --muted:#6b7280; --primary:#2563eb; --danger:#dc2626; --success:#16a34a; }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  header{background:var(--panel);border-bottom:1px solid var(--border);padding:14px 20px;}
+  header h1{font-size:18px;margin:0;}
+  main{padding:20px;max-width:1100px;margin:0 auto;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px;}
+  .panel h2{margin-top:0;font-size:15px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;}
+  .row > *{flex:1;min-width:160px;}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;margin-top:8px;}
+  input, select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
+  button{cursor:pointer;}
+  .btn{background:var(--primary);color:#fff;border:none;padding:9px 16px;border-radius:6px;font-size:14px;font-weight:500;}
+  .btn.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+  .btn.danger{background:#fff;color:var(--danger);border:1px solid #fca5a5;}
+  .btn.small{padding:5px 10px;font-size:12px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;}
+  th, td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;}
+  a.link{color:var(--primary);cursor:pointer;text-decoration:none;font-size:13px;}
+  .muted{color:var(--muted);font-size:12px;}
+  .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;}
+  .tag.ok{background:#f0fdf4;color:var(--success);}
+  .tag.off{background:#fef2f2;color:var(--danger);}
+  #resumenBox{white-space:pre-wrap;font-size:12px;background:#f8f9fb;padding:10px;border-radius:8px;display:none;}
+</style>
+</head>
+<body>
+<header><h1>Mi ERP · Panel administrativo</h1></header>
+<main>
+
+  <div class="panel">
+    <h2>Conexión</h2>
+    <div class="row">
+      <div><label>URL de Apps Script</label><input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/.../exec"></div>
+      <div><label>Token de administrador</label><input type="password" id="adminToken" placeholder="Definido en Script Properties como ADMIN_TOKEN"></div>
+      <div style="flex:0 0 auto;align-self:end;"><button class="btn" id="btnConectar">Conectar</button></div>
+    </div>
+    <p class="muted">El token nunca se guarda en este archivo: solo queda en la sesión de este navegador (sessionStorage).</p>
+  </div>
+
+  <div class="panel">
+    <h2>Locales</h2>
+    <button class="btn secondary small" id="btnRefrescar">Actualizar lista</button>
+    <table>
+      <thead><tr><th>store_id</th><th>Nombre</th><th>Usuario</th><th>Estado</th><th>Último contacto</th><th>Última sync OK</th><th></th></tr></thead>
+      <tbody id="tablaLocales"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Crear local nuevo</h2>
+    <div class="row">
+      <div><label>store_id</label><input type="text" id="nuevoStoreId" placeholder="Ej: STORE_003"></div>
+      <div><label>Nombre del local</label><input type="text" id="nuevoNombre" placeholder="Ej: Almacén Don Bruno"></div>
+      <div><label>Usuario</label><input type="text" id="nuevoUsuario"></div>
+      <div><label>Contraseña inicial</label><input type="password" id="nuevoPassword"></div>
+      <div style="flex:0 0 auto;align-self:end;"><button class="btn" id="btnCrearLocal">Crear</button></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Resumen por local</h2>
+    <div class="row">
+      <div><label>store_id</label><input type="text" id="resStoreId"></div>
+      <div><label>Desde</label><input type="date" id="resDesde"></div>
+      <div><label>Hasta</label><input type="date" id="resHasta"></div>
+      <div style="flex:0 0 auto;align-self:end;"><button class="btn secondary" id="btnVerResumen">Ver resumen</button></div>
+    </div>
+    <pre id="resumenBox"></pre>
+  </div>
+
+</main>
+
+<script>
+function apiBase(){ return document.getElementById('apiUrl').value.trim(); }
+function token(){ return document.getElementById('adminToken').value; }
+
+async function llamar(action, payload){
+  const resp = await fetch(apiBase(), {
+    method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action, admin_token: token(), ...payload})
+  });
+  return resp.json();
+}
+
+function guardarConexion(){
+  sessionStorage.setItem('erp_admin_api', apiBase());
+  sessionStorage.setItem('erp_admin_token', token());
+}
+function cargarConexion(){
+  document.getElementById('apiUrl').value = sessionStorage.getItem('erp_admin_api') || '';
+  document.getElementById('adminToken').value = sessionStorage.getItem('erp_admin_token') || '';
+}
+
+async function refrescarLocales(){
+  const data = await llamar('adminListStores', {});
+  if(!data.ok){ alert(data.error||'Error al listar locales'); return; }
+  const tbody = document.getElementById('tablaLocales');
+  tbody.innerHTML = '';
+  data.stores.forEach(s=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${s.store_id}</td><td>${s.store_name}</td><td>${s.username}</td>
+      <td><span class="tag ${s.active?'ok':'off'}">${s.active?'Activo':'Inactivo'}</span></td>
+      <td>${s.last_seen_at||'-'}</td>
+      <td>${s.last_successful_batch_at||'-'}</td>
+      <td>
+        <a class="link" data-toggle="${s.store_id}" data-active="${s.active}">${s.active?'Desactivar':'Activar'}</a> ·
+        <a class="link" data-reset="${s.store_id}">Resetear contraseña</a>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-toggle]').forEach(a=> a.addEventListener('click', async ()=>{
+    await llamar('adminDeactivateStore', {store_id:a.dataset.toggle, active: a.dataset.active!=='true'});
+    refrescarLocales();
+  }));
+  tbody.querySelectorAll('[data-reset]').forEach(a=> a.addEventListener('click', async ()=>{
+    const pass = prompt('Nueva contraseña para ' + a.dataset.reset + ':');
+    if(!pass) return;
+    const r = await llamar('adminResetPassword', {store_id:a.dataset.reset, new_password: pass});
+    alert(r.ok ? 'Contraseña actualizada' : (r.error||'Error'));
+  }));
+}
+
+document.getElementById('btnConectar').addEventListener('click', ()=>{ guardarConexion(); refrescarLocales(); });
+document.getElementById('btnRefrescar').addEventListener('click', refrescarLocales);
+document.getElementById('btnCrearLocal').addEventListener('click', async ()=>{
+  const r = await llamar('adminCreateStore', {
+    store_id: document.getElementById('nuevoStoreId').value.trim(),
+    store_name: document.getElementById('nuevoNombre').value.trim(),
+    username: document.getElementById('nuevoUsuario').value.trim(),
+    password: document.getElementById('nuevoPassword').value
+  });
+  alert(r.ok ? 'Local creado' : (r.error||'Error al crear el local'));
+  if(r.ok) refrescarLocales();
+});
+document.getElementById('btnVerResumen').addEventListener('click', async ()=>{
+  const r = await llamar('adminStoreSummary', {
+    store_id: document.getElementById('resStoreId').value.trim(),
+    desde: document.getElementById('resDesde').value,
+    hasta: document.getElementById('resHasta').value
+  });
+  const box = document.getElementById('resumenBox');
+  box.style.display = 'block';
+  box.textContent = r.ok ? JSON.stringify(r.resumen, null, 2) : (r.error||'Error');
+});
+
+cargarConexion();
+if(apiBase() && token()) refrescarLocales();
+</script>
+</body>
+</html>

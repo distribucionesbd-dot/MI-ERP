@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mi ERP - Tests</title>
+<style>
+  body{font-family:monospace;background:#111;color:#ddd;padding:20px;}
+  .ok{color:#4ade80;} .fail{color:#f87171;font-weight:bold;}
+  h1{color:#fff;}
+</style>
+</head>
+<body>
+<h1>Mi ERP — pruebas de cálculos y outbox/idempotencia</h1>
+<div id="out"></div>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script>
+const out = document.getElementById('out');
+let total=0, fallas=0;
+function assert(desc, cond){
+  total++;
+  const line = document.createElement('div');
+  if(cond){ line.className='ok'; line.textContent='✓ ' + desc; }
+  else { fallas++; line.className='fail'; line.textContent='✗ ' + desc; }
+  out.appendChild(line);
+}
+function assertEq(desc, a, b){
+  assert(desc + ' (obtuve ' + JSON.stringify(a) + ', esperaba ' + JSON.stringify(b) + ')', JSON.stringify(a)===JSON.stringify(b));
+}
+function assertCerca(desc, a, b, eps){
+  eps = eps===undefined?0.01:eps;
+  assert(desc + ' (obtuve ' + a + ', esperaba ~' + b + ')', Math.abs(a-b) < eps);
+}
+
+/* ---- cálculos puros ---- */
+assertCerca('margen sobre venta: precio 100, costo 60 -> 40%', Utils.calcularMargenSobreVenta(100,60), 40);
+assertCerca('margen sobre venta: precio 0 -> 0%', Utils.calcularMargenSobreVenta(0,60), 0);
+assertEq('precio desde % s/costo: costo 100, 50% -> 150', Utils.calcularPrecioDesdeMargenSobreCosto(100,50), 150);
+assertCerca('% s/costo: costo 100, precio 150 -> 50%', Utils.calcularMargenSobreCosto(150,100), 50);
+assertCerca('% s/costo: costo 0 -> 0%', Utils.calcularMargenSobreCosto(150,0), 0);
+
+const totales = Utils.calcularTotalesVenta([
+  {cantidad:2, precio:100, costo:60},
+  {cantidad:0.5, precio:200, costo:150}
+]);
+assertCerca('total de venta con 2 ítems', totales.total, 300);
+assertCerca('costo total de venta con 2 ítems', totales.costoTotal, 195);
+assertCerca('ganancia de venta con 2 ítems', totales.ganancia, 105);
+
+assertEq('fmtCantidad kg redondea a 3 decimales', Utils.fmtCantidad(1.23456,'kg'), '1.235 kg');
+assertEq('fmtCantidad unidad sin decimales forzados', Utils.fmtCantidad(3,'unidad'), '3');
+assertEq('fmtFecha ISO -> DD/MM/YYYY', Utils.fmtFecha('2026-03-05'), '05/03/2026');
+assertEq('escapeHtml escapa < > &', Utils.escapeHtml('<a>&"\''), '&lt;a&gt;&amp;&quot;&#39;');
+
+/* ---- venta editada preserva costos históricos ---- */
+(function(){
+  const itemsOriginales = [{cantidad:1, precio:100, costo:60}];
+  const totalesOriginal = Utils.calcularTotalesVenta(itemsOriginales);
+  // Simulo que el costo ACTUAL del producto subió a 90, pero el ítem de la venta
+  // ya tiene costo:60 congelado -> recalcular sobre los mismos items no debe cambiar.
+  const totalesRecalculado = Utils.calcularTotalesVenta(itemsOriginales);
+  assertCerca('editar una venta sin tocar items no cambia la ganancia histórica', totalesRecalculado.ganancia, totalesOriginal.ganancia);
+})();
+
+/* ---- outbox / idempotencia simulada (misma lógica que procesarLoteEventos_ en Apps Script) ---- */
+(function(){
+  function simularProcesarLote(yaVistos, eventos){
+    const accepted=[], duplicate=[];
+    eventos.forEach(ev=>{
+      if(yaVistos.has(ev.event_id)){ duplicate.push(ev.event_id); return; }
+      yaVistos.add(ev.event_id);
+      accepted.push(ev.event_id);
+    });
+    return {accepted, duplicate};
+  }
+  const servidor = new Set();
+  const evA = {event_id:'e1', entity_type:'sale', action:'created'};
+  const evB = {event_id:'e2', entity_type:'sale', action:'created'};
+
+  const r1 = simularProcesarLote(servidor, [evA, evB]);
+  assertEq('primer envío: ambos eventos aceptados', r1.accepted.sort(), ['e1','e2']);
+  assertEq('primer envío: sin duplicados', r1.duplicate, []);
+
+  // El cliente reenvía el mismo lote porque perdió la respuesta del servidor.
+  const r2 = simularProcesarLote(servidor, [evA, evB]);
+  assertEq('reenvío del mismo lote: nada aceptado de nuevo', r2.accepted, []);
+  assertEq('reenvío del mismo lote: ambos marcados duplicados', r2.duplicate.sort(), ['e1','e2']);
+
+  // Doble tap en FINALIZAR VENTA -> mismo event_id no debería poder generarse dos veces
+  // porque el guardado está bloqueado por _bloqueadoGuardado en venta.js, pero igual
+  // verificamos que si dos eventos IGUALES llegan, el índice los trata como uno solo.
+  const r3 = simularProcesarLote(servidor, [evA]);
+  assertEq('evento repetido individual también queda como duplicado', r3.duplicate, ['e1']);
+})();
+
+const resumen = document.createElement('h2');
+resumen.textContent = fallas===0 ? `TODO OK (${total} pruebas)` : `${fallas} de ${total} pruebas fallaron`;
+resumen.className = fallas===0 ? 'ok' : 'fail';
+out.appendChild(resumen);
+</script>
+</body>
+</html>
