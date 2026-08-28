@@ -9,7 +9,7 @@ window.APP_CONFIG = {
 
   // Reemplazá esto por la URL de tu Web App de Apps Script (ver SETUP_ADMIN.md).
   // También se puede pisar en tiempo de ejecución desde Configuración > Diagnóstico.
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/TU_DEPLOYMENT_ID/exec',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyyMrNEnzUXpegJygeAxGz-Ng4i_rz7B1FkUOROovdMVj06eE9J9BNWJQ7HptFlRHcGBw/exec',
 
   SYNC_INTERVAL_MS: 10 * 60 * 1000,        // cada 10 minutos
   SYNC_VISIBILITY_DEBOUNCE_MS: 3000,       // debounce al volver visible
