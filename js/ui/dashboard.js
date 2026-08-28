@@ -1,3 +1,34 @@
+/* Mientras el usuario está mirando Inicio, volvemos a pedir los totales
+   combinados cada POLL_MS: así, si otro dispositivo del mismo local carga
+   una venta, este dispositivo la ve sola, sin que nadie toque nada.
+   No es tiempo real "de verdad" (esta arquitectura no tiene esa vía: es
+   Apps Script + Sheets, no un servidor con websockets), pero a los efectos
+   prácticos se ve casi instantáneo. Se frena solo al salir de Inicio o
+   cuando la pantalla/pestaña no está visible, para no gastar de más. */
+const DASH_POLL_MS = 15000;
+let _dashPollTimer = null;
+function _detenerPollInicio(){
+  if(_dashPollTimer){ clearInterval(_dashPollTimer); _dashPollTimer = null; }
+}
+function _iniciarPollInicio(){
+  _detenerPollInicio();
+  _dashPollTimer = setInterval(()=>{
+    if(document.visibilityState==='visible' && window.UiNav.currentView()==='dashboard'){
+      window.ViewHandlers.dashboard();
+    }
+  }, DASH_POLL_MS);
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && window.UiNav.currentView()==='dashboard'){
+    window.ViewHandlers.dashboard();
+  }
+});
+// nav.js llama a esto cada vez que se cambia de pestaña (con el nombre de
+// la vista nueva); si nos vamos de Inicio, frenamos el sondeo.
+window.ViewHandlers.__always = function(view){
+  if(view !== 'dashboard') _detenerPollInicio();
+};
+
 window.ViewHandlers.dashboard = async function renderDashboardUI(){
   const config = await StorageService.getConfig();
   const d = await BusinessService.calcularDashboardCombinado();
@@ -27,4 +58,6 @@ window.ViewHandlers.dashboard = async function renderDashboardUI(){
   tbody.querySelectorAll('[data-reimprimir]').forEach(a=>{
     a.addEventListener('click', ()=> window.UiBoletas.reimprimir(a.dataset.reimprimir));
   });
+
+  if(window.UiNav.currentView()==='dashboard') _iniciarPollInicio();
 };
