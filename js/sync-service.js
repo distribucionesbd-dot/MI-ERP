@@ -80,6 +80,7 @@ window.SyncService = (function(){
 
       const lotes = _chunk(pendientes, cfg.SYNC_BATCH_SIZE);
       let huboError = false;
+      let motivoError = null;
 
       for(const lote of lotes){
         const ids = lote.map(e=>e.event_id);
@@ -95,12 +96,16 @@ window.SyncService = (function(){
           });
         }catch(e){
           huboError = true;
+          motivoError = 'sin_conexion: ' + (e && e.message ? e.message : e);
+          console.error('[SyncService] falló el request a Apps Script:', e);
           await StorageService.outboxMarcar(ids, 'failed', 'sin_conexion');
           break; // no seguir mandando lotes si ya falló la red
         }
 
         if(!ack || ack.ok!==true){
           huboError = true;
+          motivoError = (ack && ack.error) || 'error_servidor';
+          console.error('[SyncService] el servidor rechazó el lote:', ack);
           await StorageService.outboxMarcar(ids, 'failed', (ack && ack.error) || 'error_servidor');
           break;
         }
@@ -119,6 +124,7 @@ window.SyncService = (function(){
       if(huboError){
         _backoffAttempts++;
         _status.state = 'error';
+        _status.lastError = motivoError;
         _emit();
         _scheduleBackoffRetry();
       } else {
