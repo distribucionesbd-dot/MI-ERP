@@ -54,9 +54,17 @@ window.UiGastos = (function(){
     const config = await StorageService.getConfig();
     const desde = document.getElementById('gastosDesde').value;
     const hasta = document.getElementById('gastosHasta').value;
-    let lista = await BusinessService.listarGastos();
+    const { gastos, combinado } = await BusinessService.listarGastosCombinado();
+    let lista = gastos;
     if(desde) lista = lista.filter(g=>g.fecha>=desde);
     if(hasta) lista = lista.filter(g=>g.fecha<=hasta);
+
+    const aviso = document.getElementById('gastosCombinadoAviso');
+    if(aviso){
+      aviso.textContent = combinado
+        ? 'Se muestran los gastos cargados desde todos los dispositivos de este local.'
+        : 'Sin conexión: mostrando solo lo cargado en este dispositivo.';
+    }
 
     const tbody = document.getElementById('tablaGastos');
     tbody.innerHTML = '';
@@ -65,15 +73,17 @@ window.UiGastos = (function(){
     lista.forEach(g=>{
       total += g.monto;
       const tr = document.createElement('tr');
+      // Un gasto cargado desde OTRO dispositivo (todavía no visto acá) se
+      // puede ver, pero no editar/eliminar desde este dispositivo.
+      const acciones = g._local
+        ? `<a class="link" data-editar="${g.id}">Editar</a> · <a class="link" data-eliminar="${g.id}">Eliminar</a>`
+        : `<span class="tag" title="Cargado en otro dispositivo: para editarlo o eliminarlo hacelo desde ese dispositivo.">otro dispositivo</span>`;
       tr.innerHTML = `
         <td data-label="Fecha">${Utils.fmtFecha(g.fecha)}</td>
         <td data-label="Categoría"><span class="tag">${Utils.escapeHtml(g.categoria)}</span></td>
         <td data-label="Descripción">${Utils.escapeHtml(g.descripcion||'-')}</td>
         <td class="right" data-label="Monto">${Utils.fmtMoneda(g.monto, config.moneda)}</td>
-        <td class="actions-cell">
-          <a class="link" data-editar="${g.id}">Editar</a> ·
-          <a class="link" data-eliminar="${g.id}">Eliminar</a>
-        </td>`;
+        <td class="actions-cell">${acciones}</td>`;
       tbody.appendChild(tr);
     });
     tbody.querySelectorAll('[data-editar]').forEach(a=> a.addEventListener('click', ()=> editar(a.dataset.editar)));
@@ -87,6 +97,7 @@ window.UiGastos = (function(){
     document.getElementById('btnLimpiarFiltroGastos').addEventListener('click', limpiarFiltro);
     document.getElementById('gastosDesde').addEventListener('change', render);
     document.getElementById('gastosHasta').addEventListener('change', render);
+    window.UiNav.autoActualizar('gastos', 15000, render);
   }
   window.ViewHandlers.gastos = render;
   return { init };

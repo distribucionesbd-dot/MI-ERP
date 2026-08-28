@@ -278,10 +278,10 @@ window.BusinessService = (function(){
     };
   }
 
-  async function calcularReporte(desde, hasta){
-    const ventas = (await StorageService.listEntities('sale')).filter(v=> v.fecha>=desde && v.fecha<=hasta);
-    const gastos = (await StorageService.listEntities('expense')).filter(g=> g.fecha>=desde && g.fecha<=hasta);
-
+  // Cálculo puro a partir de listas ya filtradas por período: lo comparten
+  // calcularReporte (datos locales) y calcularReporteCombinado (datos de
+  // todos los dispositivos), para no duplicar las fórmulas.
+  function _agregarReporte(ventas, gastos){
     const totalVentas = ventas.reduce((s,v)=>s+v.total,0);
     const totalCosto = ventas.reduce((s,v)=>s+v.costo_total,0);
     const gananciaBruta = totalVentas - totalCosto;
@@ -290,7 +290,7 @@ window.BusinessService = (function(){
 
     const aggProd = {};
     ventas.forEach(v=>{
-      v.items.forEach(it=>{
+      (v.items||[]).forEach(it=>{
         const key = it.producto_id || ('libre:'+it.nombre);
         if(!aggProd[key]) aggProd[key] = {nombre:it.nombre, cantidad:0, unidad:it.unidad||'unidad', total:0, ganancia:0};
         aggProd[key].cantidad += it.cantidad;
@@ -311,6 +311,58 @@ window.BusinessService = (function(){
     const porCliente = Object.values(aggCli).sort((a,b)=>b.total-a.total);
 
     return { totalVentas, totalCosto, gananciaBruta, totalGastos, gananciaNeta, porProducto, porCliente };
+  }
+
+  async function calcularReporte(desde, hasta){
+    const ventas = (await StorageService.listEntities('sale')).filter(v=> v.fecha>=desde && v.fecha<=hasta);
+    const gastos = (await StorageService.listEntities('expense')).filter(g=> g.fecha>=desde && g.fecha<=hasta);
+    return _agregarReporte(ventas, gastos);
+  }
+
+  // Igual que calcularReporte, pero si hay conexión usa las ventas/gastos
+  // de TODOS los dispositivos del local (vía SyncService.historialCombinado),
+  // no solo lo cargado en este. Si no hay conexión, cae a los datos locales.
+  async function calcularReporteCombinado(desde, hasta){
+    const resp = await SyncService.historialCombinado();
+    if(!resp || resp.ok!==true){
+      const r = await calcularReporte(desde, hasta);
+      return { ...r, combinado:false };
+    }
+    const ventas = resp.ventas.filter(v=> v.fecha>=desde && v.fecha<=hasta);
+    const gastos = resp.gastos.filter(g=> g.fecha>=desde && g.fecha<=hasta);
+    return { ..._agregarReporte(ventas, gastos), combinado:true };
+  }
+
+  // Historial de boletas de TODOS los dispositivos del local (para Historial
+  // de boletas). Cada venta lleva _local:true si además existe en este
+  // dispositivo (o sea, se puede editar/eliminar desde acá); las que
+  // llegaron solo desde otro dispositivo se pueden ver y reimprimir, pero
+  // no editar/eliminar desde este dispositivo (ver ARCHITECTURE.md).
+  async function listarVentasCombinado(){
+    const local = await listarVentas();
+    const localIds = new Set(local.map(v=>v.id));
+    const resp = await SyncService.historialCombinado();
+    if(!resp || resp.ok!==true){
+      return { ventas: local.map(v=>({...v, _local:true})), combinado:false };
+    }
+    const ventas = resp.ventas
+      .map(v=> ({...v, _local: localIds.has(v.id)}))
+      .sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
+    return { ventas, combinado:true };
+  }
+
+  // Igual que arriba, pero para gastos.
+  async function listarGastosCombinado(){
+    const local = await listarGastos();
+    const localIds = new Set(local.map(g=>g.id));
+    const resp = await SyncService.historialCombinado();
+    if(!resp || resp.ok!==true){
+      return { gastos: local.map(g=>({...g, _local:true})), combinado:false };
+    }
+    const gastos = resp.gastos
+      .map(g=> ({...g, _local: localIds.has(g.id)}))
+      .sort((a,b)=> b.fecha.localeCompare(a.fecha));
+    return { gastos, combinado:true };
   }
 
   /* =================== BACKUP LOCAL (formato nuevo) =================== */
@@ -461,7 +513,8 @@ window.BusinessService = (function(){
     listarVentas, obtenerVenta, crearVenta, editarVenta, eliminarVenta,
     guardarBorrador, obtenerBorrador, borrarBorrador,
     listarGastos, guardarGasto, eliminarGasto,
-    calcularDashboard, calcularDashboardCombinado, calcularReporte,
+    calcularDashboard, calcularDashboardCombinado, calcularReporte, calcularReporteCombinado,
+    listarVentasCombinado, listarGastosCombinado,
     exportarBackupJSON, restaurarBackupJSON,
     necesitaResyncCompleto, ejecutarResyncCompleto,
     traerCatalogoDelServidor, adoptarCatalogoNuevo

@@ -23,7 +23,14 @@ window.UiReportes = (function(){
   async function render(){
     const config = await StorageService.getConfig();
     const {desde, hasta} = rangoPeriodo();
-    const r = await BusinessService.calcularReporte(desde, hasta);
+    const r = await BusinessService.calcularReporteCombinado(desde, hasta);
+
+    const aviso = document.getElementById('reportesCombinadoAviso');
+    if(aviso){
+      aviso.textContent = r.combinado
+        ? 'Este reporte suma lo cargado en todos los dispositivos de este local.'
+        : 'Sin conexión: mostrando solo lo cargado en este dispositivo.';
+    }
 
     document.getElementById('repVentas').textContent = Utils.fmtMoneda(r.totalVentas, config.moneda);
     document.getElementById('repCosto').textContent = Utils.fmtMoneda(r.totalCosto, config.moneda);
@@ -54,6 +61,7 @@ window.UiReportes = (function(){
     document.getElementById('reportePeriodo').addEventListener('change', onCambiaPeriodo);
     document.getElementById('reporteDesde').addEventListener('change', render);
     document.getElementById('reporteHasta').addEventListener('change', render);
+    window.UiNav.autoActualizar('reportes', 15000, render);
   }
   window.ViewHandlers.reportes = render;
   return { init };

@@ -181,6 +181,19 @@ window.SyncService = (function(){
     }
   }
 
+  // Historial completo (ventas con ítems + gastos) agregando todos los
+  // dispositivos del local. Uso: pantallas de Boletas, Gastos y Reportes.
+  async function historialCombinado(){
+    if(!_session) return {ok:false, error:'No hay sesión activa'};
+    try{
+      return await _fetchConTimeout({
+        action:'historialCombinado', store_id:_session.store_id, device_id:_session.device_id, token:_session.token
+      });
+    }catch(e){
+      return {ok:false, error:'sin_conexion'};
+    }
+  }
+
   function _scheduleBackoffRetry(){
     const ms = Math.min(cfg.SYNC_BACKOFF_BASE_MS * Math.pow(2, _backoffAttempts-1), cfg.SYNC_BACKOFF_MAX_MS);
     setTimeout(()=> syncNow(), ms);
@@ -202,5 +215,5 @@ window.SyncService = (function(){
     document.addEventListener('visibilitychange', _visibilityDebounced);
   }
 
-  return { init, syncNow, scheduleOpportunistic, startTimers, onStatusChange, getStatus, pullState, dashboardResumen };
+  return { init, syncNow, scheduleOpportunistic, startTimers, onStatusChange, getStatus, pullState, dashboardResumen, historialCombinado };
 })();

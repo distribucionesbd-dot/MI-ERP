@@ -16,7 +16,9 @@
   .row{display:flex;gap:10px;flex-wrap:wrap;}
   .row > *{flex:1;min-width:160px;}
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;margin-top:8px;}
-  input, select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
+  input, select, textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+  textarea{resize:vertical;}
+  code{background:#f1f2f5;padding:1px 5px;border-radius:4px;font-size:12px;}
   button{cursor:pointer;}
   .btn{background:var(--primary);color:#fff;border:none;padding:9px 16px;border-radius:6px;font-size:14px;font-weight:500;}
   .btn.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
@@ -82,6 +84,18 @@
       <thead><tr><th>Nombre</th><th>Código</th><th>Categoría</th><th>Unidad</th><th></th></tr></thead>
       <tbody id="tablaCatalogo"></tbody>
     </table>
+
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+      <h3 style="margin:0 0 6px;font-size:13px;">Carga masiva (pegar texto o subir un .csv)</h3>
+      <p class="muted">Una línea por producto, columnas separadas por comas, en este orden: <b>Nombre, Código, Categoría, Unidad</b> (Código y Categoría son opcionales; Unidad: "unidad" o "kg" — si la dejás vacía, queda "unidad"). Si copiás un Excel/Sheets a esta caja, separalo con comas primero (Excel suele exportarlo así al guardar como .csv). Si la primera línea es un encabezado (por ej. "Nombre, Código..."), se ignora sola. No se vuelve a cargar un producto cuyo nombre ya esté en el catálogo.</p>
+      <p class="muted">Ejemplo:<br><code>Yerba La Merced 1kg, YER001, Almacén, unidad</code><br><code>Tomate, , Verdulería, kg</code></p>
+      <textarea id="catMasivoTexto" rows="6" placeholder="Yerba La Merced 1kg, YER001, Almacén, unidad&#10;Coca Cola 500ml, COC500, Bebidas, unidad&#10;Tomate, , Verdulería, kg"></textarea>
+      <div class="row" style="margin-top:8px;align-items:end;">
+        <div><label>...o subir un archivo .csv</label><input type="file" id="catMasivoArchivo" accept=".csv,text/csv,text/plain"></div>
+        <div style="flex:0 0 auto;"><button class="btn" id="btnCargaMasiva">Cargar productos</button></div>
+      </div>
+      <p class="muted" id="catMasivoResultado"></p>
+    </div>
   </div>
 
   <div class="panel">
@@ -185,6 +199,47 @@ document.getElementById('btnAgregarCatalogo').addEventListener('click', async ()
   document.getElementById('catCategoria').value = '';
   refrescarCatalogo();
 });
+// Convierte el texto pegado (o el contenido de un .csv subido) en una
+// lista de productos {name, sku, category, unit}. Separador de columna:
+// coma. Si la primera línea parece un encabezado (arranca con "nombre",
+// "name" o "producto"), se descarta sola.
+function parsearProductosCSV(texto){
+  const lineas = String(texto||'').split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
+  if(!lineas.length) return [];
+  const primeraCol0 = lineas[0].split(',')[0].trim().toLowerCase();
+  const filas = ['nombre','name','producto'].includes(primeraCol0) ? lineas.slice(1) : lineas;
+  return filas.map(linea=>{
+    const cols = linea.split(',').map(c=>c.trim());
+    const unidadRaw = (cols[3]||'').toLowerCase();
+    const unit = (unidadRaw==='kg' || unidadRaw==='kilo' || unidadRaw==='kilogramo') ? 'kg' : 'unidad';
+    return { name: cols[0]||'', sku: cols[1]||'', category: cols[2]||'', unit };
+  });
+}
+
+document.getElementById('catMasivoArchivo').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{ document.getElementById('catMasivoTexto').value = String(reader.result||''); };
+  reader.readAsText(file, 'UTF-8');
+});
+
+document.getElementById('btnCargaMasiva').addEventListener('click', async ()=>{
+  const resultado = document.getElementById('catMasivoResultado');
+  const productos = parsearProductosCSV(document.getElementById('catMasivoTexto').value).filter(p=>p.name);
+  if(!productos.length){ resultado.textContent = 'No se encontró ningún producto con nombre para cargar.'; return; }
+  if(!confirm('¿Cargar ' + productos.length + ' producto(s) al catálogo compartido? Van a aparecer solos en todos los locales activos.')) return;
+  const r = await llamar('adminAddCatalogProductsBulk', { productos });
+  if(!r.ok){ resultado.textContent = 'Error: ' + (r.error||'desconocido'); return; }
+  let msg = 'Se agregaron ' + r.agregados + ' producto(s) nuevo(s) al catálogo.';
+  if(r.omitidos_duplicados) msg += ' Se omitieron ' + r.omitidos_duplicados + ' por ya existir un producto con ese nombre.';
+  if(r.omitidos_sin_nombre) msg += ' Se omitieron ' + r.omitidos_sin_nombre + ' línea(s) sin nombre.';
+  resultado.textContent = msg;
+  document.getElementById('catMasivoTexto').value = '';
+  document.getElementById('catMasivoArchivo').value = '';
+  refrescarCatalogo();
+});
+
 document.getElementById('btnCrearLocal').addEventListener('click', async ()=>{
   const r = await llamar('adminCreateStore', {
     store_id: document.getElementById('nuevoStoreId').value.trim(),

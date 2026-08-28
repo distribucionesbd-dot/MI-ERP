@@ -1,6 +1,11 @@
 window.UiBoletas = (function(){
+  // Última lista renderizada (ya filtrada), para poder reimprimir sin ir a
+  // buscarla a IndexedDB: las boletas cargadas desde OTRO dispositivo no
+  // están ahí, pero sí trae sus ítems el combinado del servidor.
+  let _listaActual = [];
+
   async function reimprimir(id){
-    const v = await BusinessService.obtenerVenta(id);
+    const v = _listaActual.find(x=>x.id===id) || await BusinessService.obtenerVenta(id);
     if(v) await window.UiVenta.reimprimir(v);
   }
   function editar(id){ window.UiVenta.editarVentaHistorica(id); }
@@ -23,16 +28,33 @@ window.UiBoletas = (function(){
     const desde = document.getElementById('boletasDesde').value;
     const hasta = document.getElementById('boletasHasta').value;
     const buscar = (document.getElementById('boletasBuscar').value||'').toLowerCase();
-    let lista = await BusinessService.listarVentas();
+    const { ventas, combinado } = await BusinessService.listarVentasCombinado();
+    let lista = ventas;
     if(desde) lista = lista.filter(v=>v.fecha>=desde);
     if(hasta) lista = lista.filter(v=>v.fecha<=hasta);
     if(buscar) lista = lista.filter(v=>(v.cliente_nombre_snapshot||'').toLowerCase().includes(buscar));
+    _listaActual = lista;
+
+    const aviso = document.getElementById('boletasCombinadoAviso');
+    if(aviso){
+      aviso.textContent = combinado
+        ? 'Se muestran las boletas cargadas desde todos los dispositivos de este local.'
+        : 'Sin conexión: mostrando solo lo cargado en este dispositivo.';
+    }
 
     const tbody = document.getElementById('tablaBoletas');
     tbody.innerHTML = '';
     document.getElementById('boletasEmpty').style.display = lista.length ? 'none' : 'block';
     lista.forEach(v=>{
       const tr = document.createElement('tr');
+      // Una boleta cargada desde OTRO dispositivo (todavía no vista acá) se
+      // puede mirar y reimprimir, pero no editar/eliminar desde este
+      // dispositivo (ver ARCHITECTURE.md).
+      const acciones = v._local
+        ? `<a class="link" data-reimprimir="${v.id}">Reimprimir</a> ·
+           <a class="link" data-editar="${v.id}">Editar</a> ·
+           <a class="link" data-eliminar="${v.id}">Eliminar</a>`
+        : `<a class="link" data-reimprimir="${v.id}">Reimprimir</a> <span class="tag" title="Cargada en otro dispositivo: para editarla o eliminarla hacelo desde ese dispositivo.">otro dispositivo</span>`;
       tr.innerHTML = `
         <td data-label="N°">${String(v.numero).padStart(4,'0')}</td>
         <td data-label="Fecha">${Utils.fmtFecha(v.fecha)}</td>
@@ -40,11 +62,7 @@ window.UiBoletas = (function(){
         <td class="right" data-label="Costo">${Utils.fmtMoneda(v.costo_total, config.moneda)}</td>
         <td class="right" data-label="Total">${Utils.fmtMoneda(v.total, config.moneda)}</td>
         <td class="right" data-label="Ganancia">${Utils.fmtMoneda(v.ganancia, config.moneda)}</td>
-        <td class="actions-cell">
-          <a class="link" data-reimprimir="${v.id}">Reimprimir</a> ·
-          <a class="link" data-editar="${v.id}">Editar</a> ·
-          <a class="link" data-eliminar="${v.id}">Eliminar</a>
-        </td>`;
+        <td class="actions-cell">${acciones}</td>`;
       tbody.appendChild(tr);
     });
     tbody.querySelectorAll('[data-reimprimir]').forEach(a=> a.addEventListener('click', ()=> reimprimir(a.dataset.reimprimir)));
@@ -58,6 +76,7 @@ window.UiBoletas = (function(){
       document.getElementById(id).addEventListener('change', render);
     });
     document.getElementById('btnLimpiarFiltroBoletas').addEventListener('click', limpiarFiltro);
+    window.UiNav.autoActualizar('boletas', 15000, render);
   }
 
   window.ViewHandlers.boletas = render;
