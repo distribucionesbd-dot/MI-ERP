@@ -1,6 +1,8 @@
 window.UiProductos = (function(){
   let _config = null;
 
+  function _faltaPrecio(p){ return !!p.desde_catalogo && !p.costo && !p.precio; }
+
   function onCambiaUnidadForm(){
     const esKg = document.getElementById('prodUnidad').value === 'kg';
     document.getElementById('wrapProdMargen').style.display = esKg ? 'block' : 'none';
@@ -80,6 +82,11 @@ window.UiProductos = (function(){
     tbody.innerHTML = '';
     document.getElementById('productosEmpty').style.display = lista.length ? 'none' : 'block';
 
+    // Los productos que llegaron del catálogo del administrador y todavía
+    // no tienen precio cargado se muestran primero, para que sea fácil
+    // encontrarlos y completarlos.
+    lista.sort((a,b)=> (_faltaPrecio(b)?1:0) - (_faltaPrecio(a)?1:0));
+
     lista.forEach(p=>{
       const esKg = p.unidad==='kg';
       const margen = Utils.calcularMargenSobreVenta(p.precio, p.costo);
@@ -87,8 +94,9 @@ window.UiProductos = (function(){
         ? `<input type="number" step="1" min="0" value="${p.margenPct!=null?p.margenPct:''}" data-margen="${p.id}" style="${(p.margenPct!=null && p.margenPct<50)?'border-color:#dc2626;color:#dc2626;':''}">`
         : '<span class="muted">-</span>';
       const tr = document.createElement('tr');
+      if(_faltaPrecio(p)) tr.style.background = '#fffbeb';
       tr.innerHTML = `
-        <td data-label="Nombre">${Utils.escapeHtml(p.nombre)}</td>
+        <td data-label="Nombre">${Utils.escapeHtml(p.nombre)}${_faltaPrecio(p)?' <span class="tag" style="background:#fef3c7;color:#92400e;">Cargado por admin · falta precio</span>':''}</td>
         <td data-label="Código">${Utils.escapeHtml(p.codigo||'-')}</td>
         <td data-label="Categoría">${p.categoria?`<span class="tag">${Utils.escapeHtml(p.categoria)}</span>`:'-'}</td>
         <td data-label="Unidad">${esKg?'Kg':'Unidad'}</td>

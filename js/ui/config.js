@@ -28,6 +28,20 @@ window.UiConfig = (function(){
     SyncService.scheduleOpportunistic();
   }
 
+  async function traerCatalogo(){
+    if(!confirm('Esto trae los productos y clientes que ya existen en tu copia central hacia este dispositivo. No borra ni pisa nada de lo que ya tengas cargado acá. ¿Continuar?')) return;
+    UiToast.toast('Trayendo datos del servidor...');
+    const res = await BusinessService.traerCatalogoDelServidor();
+    if(!res.ok){ alert(res.error); return; }
+    const { productos, clientes } = res.data;
+    if(productos===0 && clientes===0){
+      UiToast.toast('Este dispositivo ya estaba al día');
+    } else {
+      UiToast.toast('Se trajeron ' + productos + ' productos y ' + clientes + ' clientes');
+    }
+    await window.recargarVistaActual();
+  }
+
   async function actualizarEstadoSync(){
     const status = SyncService.getStatus();
     const msg = Utils.mensajeSync(status);
@@ -154,6 +168,7 @@ window.UiConfig = (function(){
       await actualizarEstadoSync();
     });
     document.getElementById('btnCambiarLocal').addEventListener('click', cambiarLocal);
+    document.getElementById('btnTraerCatalogo').addEventListener('click', traerCatalogo);
     document.getElementById('btnExportarBackup').addEventListener('click', exportarBackup);
     document.getElementById('btnAbrirImportarBackup').addEventListener('click', ()=> document.getElementById('inputImportarBackup').click());
     document.getElementById('inputImportarBackup').addEventListener('change', importarBackup);

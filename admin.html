@@ -68,6 +68,23 @@
   </div>
 
   <div class="panel">
+    <h2>Catálogo compartido</h2>
+    <p class="muted">Productos base que aparecen solos en TODOS los locales activos (nombre, código, categoría y unidad — sin costo ni precio). Cada local completa su propio costo y precio de venta al recibirlo.</p>
+    <div class="row">
+      <div><label>Nombre</label><input type="text" id="catNombre" placeholder="Ej: Yerba La Merced 1kg"></div>
+      <div><label>Código (opcional)</label><input type="text" id="catCodigo"></div>
+      <div><label>Categoría (opcional)</label><input type="text" id="catCategoria"></div>
+      <div><label>Unidad</label><select id="catUnidad"><option value="unidad">Unidad</option><option value="kg">Kilo</option></select></div>
+      <div style="flex:0 0 auto;align-self:end;"><button class="btn" id="btnAgregarCatalogo">Agregar al catálogo</button></div>
+    </div>
+    <button class="btn secondary small" id="btnRefrescarCatalogo" style="margin-top:10px;">Actualizar lista</button>
+    <table>
+      <thead><tr><th>Nombre</th><th>Código</th><th>Categoría</th><th>Unidad</th><th></th></tr></thead>
+      <tbody id="tablaCatalogo"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
     <h2>Resumen por local</h2>
     <div class="row">
       <div><label>store_id</label><input type="text" id="resStoreId"></div>
@@ -131,8 +148,43 @@ async function refrescarLocales(){
   }));
 }
 
-document.getElementById('btnConectar').addEventListener('click', ()=>{ guardarConexion(); refrescarLocales(); });
+async function refrescarCatalogo(){
+  const data = await llamar('adminListCatalogProducts', {});
+  if(!data.ok){ alert(data.error||'Error al listar el catálogo'); return; }
+  const tbody = document.getElementById('tablaCatalogo');
+  tbody.innerHTML = '';
+  data.productos.forEach(p=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${p.name}</td><td>${p.sku||'-'}</td><td>${p.category||'-'}</td><td>${p.unit==='kg'?'Kilo':'Unidad'}</td>
+      <td><a class="link" data-borrar="${p.catalog_id}">Quitar del catálogo</a></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-borrar]').forEach(a=> a.addEventListener('click', async ()=>{
+    if(!confirm('¿Quitar este producto del catálogo compartido? Los locales que ya lo hayan recibido lo conservan igual; esto solo evita que se lo mande a los que todavía no lo tienen.')) return;
+    await llamar('adminDeleteCatalogProduct', {catalog_id:a.dataset.borrar});
+    refrescarCatalogo();
+  }));
+}
+
+document.getElementById('btnConectar').addEventListener('click', ()=>{ guardarConexion(); refrescarLocales(); refrescarCatalogo(); });
 document.getElementById('btnRefrescar').addEventListener('click', refrescarLocales);
+document.getElementById('btnRefrescarCatalogo').addEventListener('click', refrescarCatalogo);
+document.getElementById('btnAgregarCatalogo').addEventListener('click', async ()=>{
+  const nombre = document.getElementById('catNombre').value.trim();
+  if(!nombre){ alert('Falta el nombre del producto'); return; }
+  const r = await llamar('adminAddCatalogProduct', {
+    name: nombre,
+    sku: document.getElementById('catCodigo').value.trim(),
+    category: document.getElementById('catCategoria').value.trim(),
+    unit: document.getElementById('catUnidad').value
+  });
+  if(!r.ok){ alert(r.error||'Error al agregar al catálogo'); return; }
+  document.getElementById('catNombre').value = '';
+  document.getElementById('catCodigo').value = '';
+  document.getElementById('catCategoria').value = '';
+  refrescarCatalogo();
+});
 document.getElementById('btnCrearLocal').addEventListener('click', async ()=>{
   const r = await llamar('adminCreateStore', {
     store_id: document.getElementById('nuevoStoreId').value.trim(),
@@ -155,7 +207,7 @@ document.getElementById('btnVerResumen').addEventListener('click', async ()=>{
 });
 
 cargarConexion();
-if(apiBase() && token()) refrescarLocales();
+if(apiBase() && token()){ refrescarLocales(); refrescarCatalogo(); }
 </script>
 </body>
 </html>

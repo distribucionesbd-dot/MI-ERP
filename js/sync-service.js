@@ -13,7 +13,7 @@ window.SyncService = (function(){
   let _syncing = false;
   let _backoffAttempts = 0;
   let _listeners = [];
-  let _status = { state:'pendiente', pendingCount:0, lastSuccessfulSyncAt:null, lastError:null };
+  let _status = { state:'pendiente', pendingCount:0, lastSuccessfulSyncAt:null, lastError:null, catalogoNuevo:[] };
   let _timerInterval = null;
   let _visibilityDebounced = null;
 
@@ -74,6 +74,15 @@ window.SyncService = (function(){
         _backoffAttempts = 0;
         await StorageService.setMeta('last_successful_sync_at', Utils.nowISO());
         _status.lastSuccessfulSyncAt = await StorageService.getMeta('last_successful_sync_at');
+        // Aunque no haya nada para subir, igual "tocamos" al servidor por si
+        // hay productos nuevos del catálogo del administrador para bajar.
+        try{
+          const ack = await _fetchConTimeout({
+            action:'syncBatch', store_id:_session.store_id, device_id:_session.device_id,
+            token:_session.token, events:[]
+          });
+          if(ack && ack.ok===true) _status.catalogoNuevo = ack.catalogo_nuevo || [];
+        }catch(e){ /* si esto falla no es grave: no había nada pendiente igual */ }
         _emit();
         return _status;
       }
@@ -110,6 +119,8 @@ window.SyncService = (function(){
           break;
         }
 
+        _status.catalogoNuevo = ack.catalogo_nuevo || [];
+
         const aceptados = (ack.accepted_event_ids||[]).concat(ack.duplicate_event_ids||[]);
         if(aceptados.length){
           await StorageService.outboxMarcar(aceptados, 'synced');
@@ -141,6 +152,21 @@ window.SyncService = (function(){
     }
   }
 
+  // Trae el estado actual del local desde el servidor (productos, clientes,
+  // config materializados). Uso manual desde Configuración, típicamente en
+  // un dispositivo nuevo o vacío — ver BusinessService.traerCatalogoDelServidor.
+  async function pullState(){
+    if(!_session) return {ok:false, error:'No hay sesión activa'};
+    try{
+      return await _fetchConTimeout({
+        action:'pullState', store_id:_session.store_id, device_id:_session.device_id, token:_session.token
+      });
+    }catch(e){
+      console.error('[SyncService] falló pullState:', e);
+      return {ok:false, error:'sin_conexion'};
+    }
+  }
+
   function _scheduleBackoffRetry(){
     const ms = Math.min(cfg.SYNC_BACKOFF_BASE_MS * Math.pow(2, _backoffAttempts-1), cfg.SYNC_BACKOFF_MAX_MS);
     setTimeout(()=> syncNow(), ms);
@@ -162,5 +188,5 @@ window.SyncService = (function(){
     document.addEventListener('visibilitychange', _visibilityDebounced);
   }
 
-  return { init, syncNow, scheduleOpportunistic, startTimers, onStatusChange, getStatus };
+  return { init, syncNow, scheduleOpportunistic, startTimers, onStatusChange, getStatus, pullState };
 })();

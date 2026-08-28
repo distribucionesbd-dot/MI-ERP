@@ -27,6 +27,26 @@
     btn.className = msg.clase;
   }
 
+  // Si el administrador cargó productos nuevos en el catálogo compartido,
+  // el servidor los devuelve en cada sincronización (status.catalogoNuevo).
+  // Los adoptamos como productos locales (costo/precio en 0, a completar)
+  // y avisamos con un toast. adoptarCatalogoNuevo es seguro de llamar más
+  // de una vez con los mismos items: si ya existen localmente, los ignora.
+  let _adoptandoCatalogo = false;
+  async function revisarCatalogoNuevo(status){
+    if(!status.catalogoNuevo || !status.catalogoNuevo.length || _adoptandoCatalogo) return;
+    _adoptandoCatalogo = true;
+    try{
+      const cantidad = await BusinessService.adoptarCatalogoNuevo(status.catalogoNuevo);
+      if(cantidad > 0){
+        UiToast.toast(cantidad===1 ? 'Se agregó 1 producto nuevo del administrador. Cargale el precio.' : 'Se agregaron ' + cantidad + ' productos nuevos del administrador. Cargales el precio.');
+        await recargarVistaActual();
+      }
+    } finally {
+      _adoptandoCatalogo = false;
+    }
+  }
+
   async function bootstrapApp(session){
     await StorageService.init(session.store_id, session.device_id);
     SyncService.init(session);
@@ -42,6 +62,7 @@
       await SyncService.syncNow();
     });
     SyncService.onStatusChange(actualizarIndicadorHeader);
+    SyncService.onStatusChange(revisarCatalogoNuevo);
     actualizarIndicadorHeader(SyncService.getStatus());
 
     await UiVenta.verificarBorradorAlIniciar();

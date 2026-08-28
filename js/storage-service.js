@@ -62,6 +62,24 @@ window.StorageService = (function(){
     return record;
   }
 
+  // Escribe una entidad SIN encolar evento en el outbox (a diferencia de
+  // putEntity). Se usa cuando el dato ya es autoridad del servidor y no
+  // hace falta re-subirlo (ej. BusinessService.traerCatalogoDelServidor
+  // trayendo productos/clientes que ya existen en el central hacia un
+  // dispositivo nuevo). Mismo patrón que usa migration.js para el
+  // importador del backup viejo, pero centralizado acá para reutilizarlo.
+  async function putEntityLocalOnly(entityType, record){
+    const storeName = _entityStoreName(entityType);
+    const now = Utils.nowISO();
+    record.store_id = _storeId;
+    if(!record.updated_at) record.updated_at = now;
+    if(!record.created_at) record.created_at = now;
+    if(record.deleted_at === undefined) record.deleted_at = null;
+    if(!record.schema_version) record.schema_version = 1;
+    await Db.runTx([storeName], 'readwrite', (tx)=> tx.objectStore(storeName).put(record));
+    return record;
+  }
+
   // Baja lógica (tombstone): nunca se borra físicamente para que el sync pueda propagar el delete.
   async function removeEntity(entityType, id){
     const storeName = _entityStoreName(entityType);
@@ -174,7 +192,7 @@ window.StorageService = (function(){
   }
 
   return {
-    init, putEntity, removeEntity, getEntity, listEntities,
+    init, putEntity, putEntityLocalOnly, removeEntity, getEntity, listEntities,
     getMeta, setMeta, getConfig, setConfig, setConfigLocalOnly,
     getDraftVenta, setDraftVenta, clearDraftVenta,
     outboxPendientes, outboxContarPendientes, outboxMarcar, outboxBorrarSincronizados,

@@ -366,6 +366,77 @@ window.BusinessService = (function(){
     return {ok:true, total: productos.length+clientes.length+gastos.length+ventas.length};
   }
 
+  /* =================== MULTI-DISPOSITIVO Y CATÁLOGO COMPARTIDO =================== */
+
+  // Trae a ESTE dispositivo el catálogo que ya existe en el servidor para el
+  // local (productos, clientes, config). Pensado para un dispositivo nuevo
+  // o vacío que se loguea por segunda vez con el mismo local: sin esto,
+  // arrancaría con todo vacío aunque el central ya tenga datos (la sync
+  // solo empuja hacia arriba, nunca bajaba nada — ver ARCHITECTURE.md).
+  // Nunca pisa un registro que ya exista localmente con ese mismo id, para
+  // no perder una edición que este dispositivo ya tenga sin sincronizar.
+  async function traerCatalogoDelServidor(){
+    const resp = await SyncService.pullState();
+    if(!resp || resp.ok!==true){
+      return {ok:false, error: (resp && resp.error==='INVALID_TOKEN') ? 'Sesión inválida' : 'No se pudo conectar con el servidor'};
+    }
+
+    let productosNuevos = 0, clientesNuevos = 0;
+    for(const p of (resp.productos||[])){
+      const existente = await StorageService.getEntity('product', p.product_id);
+      if(existente) continue;
+      await StorageService.putEntityLocalOnly('product', {
+        id: p.product_id, nombre: p.name||'', codigo: p.sku||'', categoria: p.category||'',
+        unidad: p.unit==='kg' ? 'kg' : 'unidad', costo: Number(p.cost)||0, precio: Number(p.price)||0,
+        margenPct: p.unit==='kg' ? Utils.calcularMargenSobreCosto(Number(p.price)||0, Number(p.cost)||0) : null,
+        updated_at: p.updated_at, created_at: p.updated_at
+      });
+      productosNuevos++;
+    }
+    for(const c of (resp.clientes||[])){
+      const existente = await StorageService.getEntity('client', c.client_id);
+      if(existente) continue;
+      await StorageService.putEntityLocalOnly('client', {
+        id: c.client_id, nombre: c.name||'', nombre_lower: _nombreLower(c.name||''),
+        telefono: c.phone||'', direccion: c.address||'', updated_at: c.updated_at, created_at: c.updated_at
+      });
+      clientesNuevos++;
+    }
+    if(resp.config){
+      await StorageService.setConfigLocalOnly({
+        nombre: resp.config.name || 'Mi Negocio', telefono: resp.config.phone||'',
+        direccion: resp.config.address||'', cuit: resp.config.cuit||'',
+        pie: resp.config.footer_text||'¡Gracias por su compra!',
+        proximoNumero: Number(resp.config.next_number)||1, moneda: resp.config.currency||'$'
+      });
+    }
+    return {ok:true, data:{ productos: productosNuevos, clientes: clientesNuevos }};
+  }
+
+  // Productos que el administrador cargó en el catálogo compartido (sin
+  // costo/precio) y que este local todavía no tiene. Se reciben en cada
+  // sincronización (ver SyncService/status.catalogoNuevo) y se crean acá
+  // como productos locales NORMALES (con costo:0/precio:0, a completar por
+  // el local) para que sigan el camino normal de sincronización de ahí en
+  // más. Si el producto ya existe localmente (aunque sea por una adopción
+  // anterior que todavía no confirmó el servidor) no se toca, para no
+  // pisar un precio/costo que el local ya haya cargado.
+  async function adoptarCatalogoNuevo(items){
+    let adoptados = 0;
+    for(const it of (items||[])){
+      const existente = await StorageService.getEntity('product', it.catalog_id);
+      if(existente) continue;
+      const record = {
+        id: it.catalog_id, nombre: it.name||'', codigo: it.sku||'', categoria: it.category||'',
+        unidad: it.unit==='kg' ? 'kg' : 'unidad', costo:0, precio:0, margenPct: it.unit==='kg' ? 0 : null,
+        desde_catalogo: true
+      };
+      await StorageService.putEntity('product', record, 'created');
+      adoptados++;
+    }
+    return adoptados;
+  }
+
   return {
     listarProductos, guardarProducto, actualizarCostoInline, actualizarPrecioInline, actualizarMargenInline, eliminarProducto,
     listarClientes, buscarClientePorNombre, registrarClienteSiNoExiste, actualizarClienteInline, eliminarCliente, estadisticasCliente,
@@ -374,6 +445,7 @@ window.BusinessService = (function(){
     listarGastos, guardarGasto, eliminarGasto,
     calcularDashboard, calcularReporte,
     exportarBackupJSON, restaurarBackupJSON,
-    necesitaResyncCompleto, ejecutarResyncCompleto
+    necesitaResyncCompleto, ejecutarResyncCompleto,
+    traerCatalogoDelServidor, adoptarCatalogoNuevo
   };
 })();
