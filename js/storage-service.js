@@ -125,9 +125,18 @@ window.StorageService = (function(){
   async function clearDraftVenta(){ return Db.del('meta', 'ventaPendiente'); }
 
   /* ---- outbox ---- */
+  // Incluye 'sending' a propósito: ese estado es solo un marcador transitorio
+  // mientras un request está en vuelo DENTRO de una sola llamada a syncNow().
+  // Si la app se cierra o recarga justo en el medio de un envío, el evento
+  // puede quedar trabado en 'sending' para siempre (nunca se resuelve a
+  // 'synced' ni a 'failed'). Sin esta línea, ese evento desaparecía de
+  // outboxContarPendientes() y nunca se reintentaba, aunque nunca hubiera
+  // llegado al servidor. Reenviarlo es seguro: el servidor deduplica por
+  // event_id (si ya se había aplicado, vuelve como duplicate_event_ids).
   async function outboxPendientes(){
     const all = await Db.getAll('outbox');
-    return all.filter(e=> e.status==='pending' || e.status==='failed').sort((a,b)=> a.created_at.localeCompare(b.created_at));
+    return all.filter(e=> e.status==='pending' || e.status==='failed' || e.status==='sending')
+      .sort((a,b)=> a.created_at.localeCompare(b.created_at));
   }
   async function outboxContarPendientes(){
     return (await outboxPendientes()).length;
