@@ -1,15 +1,19 @@
 /* =========================================================
    SERVICE-WORKER.JS
-   Cache versionado del "app shell". Network-first para HTML/manifest
-   (para detectar versión nueva sin romper el offline), cache-first
-   con revalidación para el resto. Nunca cachea llamadas a Apps Script
-   (login/sync): esas siempre van directo a la red.
+   Cache versionado del "app shell". Network-first para TODO
+   (HTML, CSS, JS, manifest, íconos): siempre intenta traer la
+   versión más nueva de la red primero, y solo si no hay conexión
+   usa la copia guardada. Así un archivo modificado (ej. config.js)
+   nunca queda "pegado" a una versión vieja mientras haya internet.
+   Nunca cachea llamadas a Apps Script (login/sync): esas van
+   directo a la red y ni pasan por acá (son POST a otro origen).
 
    IMPORTANTE: subí CACHE_VERSION cada vez que cambies archivos del
-   app shell, para que los dispositivos no queden pegados a una
-   versión vieja (REGLA 9).
+   app shell, para forzar a los dispositivos ya instalados a bajar
+   la versión nueva apenas detecten el service worker distinto
+   (REGLA 9).
    ========================================================= */
-const CACHE_VERSION = 'v1.0.0';
+const CACHE_VERSION = 'v1.0.1';
 const CACHE_NAME = 'mi-erp-' + CACHE_VERSION;
 
 const APP_SHELL = [
@@ -45,6 +49,9 @@ self.addEventListener('message', (event)=>{
 function esMismoOrigen(url){
   return url.origin === self.location.origin;
 }
+function esNavegacion(req, url){
+  return req.mode === 'navigate' || req.destination === 'document' || url.pathname.endsWith('manifest.webmanifest');
+}
 
 self.addEventListener('fetch', (event)=>{
   const req = event.request;
@@ -52,26 +59,18 @@ self.addEventListener('fetch', (event)=>{
   const url = new URL(req.url);
   if(!esMismoOrigen(url)) return; // Apps Script y cualquier otro origen: directo a la red
 
-  const esNavegacion = req.mode === 'navigate' || req.destination === 'document' || url.pathname.endsWith('manifest.webmanifest');
-
-  if(esNavegacion){
-    event.respondWith(
-      fetch(req).then(resp=>{
-        caches.open(CACHE_NAME).then(cache=> cache.put(req, resp.clone()));
-        return resp;
-      }).catch(()=> caches.match(req).then(r=> r || caches.match('./index.html')))
-    );
-    return;
-  }
-
-  // Assets estáticos: cache-first con revalidación en segundo plano.
+  // Network-first con fallback a caché: intenta la red siempre que se pueda
+  // (para no quedar pegado a una versión vieja de ningún archivo), y si no
+  // hay conexión usa la última copia guardada.
   event.respondWith(
-    caches.match(req).then(cached=>{
-      const fetchPromise = fetch(req).then(resp=>{
-        if(resp && resp.ok) caches.open(CACHE_NAME).then(cache=> cache.put(req, resp.clone()));
-        return resp;
-      }).catch(()=> cached);
-      return cached || fetchPromise;
-    })
+    fetch(req).then(resp=>{
+      if(resp && resp.ok){
+        const copia = resp.clone();
+        caches.open(CACHE_NAME).then(cache=> cache.put(req, copia));
+      }
+      return resp;
+    }).catch(()=>
+      caches.match(req).then(cached=> cached || (esNavegacion(req, url) ? caches.match('./index.html') : undefined))
+    )
   );
 });
