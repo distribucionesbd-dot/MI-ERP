@@ -260,6 +260,24 @@ window.BusinessService = (function(){
     };
   }
 
+  // Igual que calcularDashboard, pero si hay conexión reemplaza los 5
+  // números principales (ventas/operaciones/ganancia de hoy, gastos del
+  // mes, cantidad de productos) por los totales agregados del servidor,
+  // que incluyen lo cargado desde CUALQUIER dispositivo de este local
+  // (no solo este). "Últimas boletas" queda siempre local (para poder
+  // reimprimir), porque el detalle completo de una venta hecha en otro
+  // dispositivo no está en este — ver ARCHITECTURE.md.
+  async function calcularDashboardCombinado(){
+    const local = await calcularDashboard();
+    const resp = await SyncService.dashboardResumen();
+    if(!resp || resp.ok!==true) return { ...local, combinado:false };
+    return {
+      ventasHoyTotal: resp.ventasHoyTotal, operacionesHoy: resp.operacionesHoy,
+      gananciaHoy: resp.gananciaHoy, gastosMes: resp.gastosMes, productosCount: resp.productosCount,
+      ultimasVentas: local.ultimasVentas, combinado:true
+    };
+  }
+
   async function calcularReporte(desde, hasta){
     const ventas = (await StorageService.listEntities('sale')).filter(v=> v.fecha>=desde && v.fecha<=hasta);
     const gastos = (await StorageService.listEntities('expense')).filter(g=> g.fecha>=desde && g.fecha<=hasta);
@@ -443,7 +461,7 @@ window.BusinessService = (function(){
     listarVentas, obtenerVenta, crearVenta, editarVenta, eliminarVenta,
     guardarBorrador, obtenerBorrador, borrarBorrador,
     listarGastos, guardarGasto, eliminarGasto,
-    calcularDashboard, calcularReporte,
+    calcularDashboard, calcularDashboardCombinado, calcularReporte,
     exportarBackupJSON, restaurarBackupJSON,
     necesitaResyncCompleto, ejecutarResyncCompleto,
     traerCatalogoDelServidor, adoptarCatalogoNuevo

@@ -167,6 +167,20 @@ window.SyncService = (function(){
     }
   }
 
+  // Totales de hoy/mes agregando todos los dispositivos del local (lee lo
+  // que el servidor ya tiene materializado). Uso: pantalla de Inicio.
+  async function dashboardResumen(){
+    if(!_session) return {ok:false, error:'No hay sesión activa'};
+    try{
+      return await _fetchConTimeout({
+        action:'dashboardResumen', store_id:_session.store_id, device_id:_session.device_id,
+        token:_session.token, hoy: Utils.hoyISO()
+      });
+    }catch(e){
+      return {ok:false, error:'sin_conexion'};
+    }
+  }
+
   function _scheduleBackoffRetry(){
     const ms = Math.min(cfg.SYNC_BACKOFF_BASE_MS * Math.pow(2, _backoffAttempts-1), cfg.SYNC_BACKOFF_MAX_MS);
     setTimeout(()=> syncNow(), ms);
@@ -188,5 +202,5 @@ window.SyncService = (function(){
     document.addEventListener('visibilitychange', _visibilityDebounced);
   }
 
-  return { init, syncNow, scheduleOpportunistic, startTimers, onStatusChange, getStatus, pullState };
+  return { init, syncNow, scheduleOpportunistic, startTimers, onStatusChange, getStatus, pullState, dashboardResumen };
 })();

@@ -1,12 +1,15 @@
 window.ViewHandlers.dashboard = async function renderDashboardUI(){
   const config = await StorageService.getConfig();
-  const d = await BusinessService.calcularDashboard();
+  const d = await BusinessService.calcularDashboardCombinado();
 
   document.getElementById('kpiVentasHoy').textContent = Utils.fmtMoneda(d.ventasHoyTotal, config.moneda);
   document.getElementById('kpiOperacionesHoy').textContent = d.operacionesHoy;
   document.getElementById('kpiGananciaHoy').textContent = Utils.fmtMoneda(d.gananciaHoy, config.moneda);
   document.getElementById('kpiGastosMes').textContent = Utils.fmtMoneda(d.gastosMes, config.moneda);
   document.getElementById('kpiProductos').textContent = d.productosCount;
+  document.getElementById('dashCombinadoAviso').textContent = d.combinado
+    ? 'Estos totales suman todos los dispositivos de este local.'
+    : 'Sin conexión: mostrando solo lo cargado en este dispositivo.';
 
   const tbody = document.getElementById('dashUltimasBoletas');
   tbody.innerHTML = '';
