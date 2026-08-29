@@ -178,6 +178,14 @@ window.UiProductos = (function(){
     document.getElementById('prodBuscar').addEventListener('input', render);
     document.getElementById('prodSoloKg').addEventListener('change', render);
     onCambiaUnidadForm();
+    // Mientras esta pantalla está abierta, cada 15s trae de nuevo el
+    // catálogo del servidor (que ya incluye lo cargado en otros
+    // dispositivos) antes de volver a dibujar la tabla — mismo patrón que
+    // ya usan Boletas/Gastos (ver ui/nav.js).
+    window.UiNav.autoActualizar('productos', 15000, async ()=>{
+      await BusinessService.replicarDesdeServidor();
+      await render();
+    });
   }
 
   window.ViewHandlers.productos = render;

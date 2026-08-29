@@ -375,16 +375,22 @@ window.BusinessService = (function(){
       const r = await calcularReporte(desde, hasta);
       return { ...r, combinado:false };
     }
-    const ventas = resp.ventas.filter(v=> v.fecha>=desde && v.fecha<=hasta);
-    const gastos = resp.gastos.filter(g=> g.fecha>=desde && g.fecha<=hasta);
+    // handleHistorialCombinado_ ahora también manda las boletas/gastos
+    // borrados (como tombstone, para que replicarDesdeServidor pueda
+    // propagar el borrado) — acá para un reporte solo interesa lo vigente.
+    const ventas = resp.ventas.filter(v=> !v.deleted && v.fecha>=desde && v.fecha<=hasta);
+    const gastos = resp.gastos.filter(g=> !g.deleted && g.fecha>=desde && g.fecha<=hasta);
     return { ..._agregarReporte(ventas, gastos), combinado:true };
   }
 
   // Historial de boletas de TODOS los dispositivos del local (para Historial
   // de boletas). Cada venta lleva _local:true si además existe en este
-  // dispositivo (o sea, se puede editar/eliminar desde acá); las que
-  // llegaron solo desde otro dispositivo se pueden ver y reimprimir, pero
-  // no editar/eliminar desde este dispositivo (ver ARCHITECTURE.md).
+  // dispositivo (o sea, se puede editar/eliminar desde acá). Con la
+  // replicación automática (ver replicarDesdeServidor más abajo) esto pasa
+  // a ser cierto para prácticamente todo al poco rato de cargado en
+  // cualquier dispositivo; mientras tanto, lo que todavía no se replicó acá
+  // se puede ver y reimprimir igual, pero no editar/eliminar desde este
+  // dispositivo hasta que la replicación lo traiga (ver ARCHITECTURE.md).
   async function listarVentasCombinado(){
     const local = await listarVentas();
     const localIds = new Set(local.map(v=>v.id));
@@ -393,6 +399,7 @@ window.BusinessService = (function(){
       return { ventas: local.map(v=>({...v, _local:true})), combinado:false };
     }
     const ventas = resp.ventas
+      .filter(v=> !v.deleted)
       .map(v=> ({...v, _local: localIds.has(v.id)}))
       .sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
     return { ventas, combinado:true };
@@ -407,6 +414,7 @@ window.BusinessService = (function(){
       return { gastos: local.map(g=>({...g, _local:true})), combinado:false };
     }
     const gastos = resp.gastos
+      .filter(g=> !g.deleted)
       .map(g=> ({...g, _local: localIds.has(g.id)}))
       .sort((a,b)=> b.fecha.localeCompare(a.fecha));
     return { gastos, combinado:true };
@@ -498,8 +506,14 @@ window.BusinessService = (function(){
       return {ok:false, error: (resp && resp.error==='INVALID_TOKEN') ? 'Sesión inválida' : 'No se pudo conectar con el servidor'};
     }
 
+    // resp.productos/resp.clientes ahora también puede traer registros
+    // borrados (deleted:true — ver handlePullState_, cambio necesario para
+    // que replicarDesdeServidor pueda propagar tombstones). Para ESTA
+    // función en particular (traer catálogo a un dispositivo nuevo/vacío)
+    // no tiene sentido "traer" algo que ya está borrado, así que se saltea.
     let productosNuevos = 0, clientesNuevos = 0;
     for(const p of (resp.productos||[])){
+      if(p.deleted) continue;
       const existente = await StorageService.getEntity('product', p.product_id);
       if(existente) continue;
       await StorageService.putEntityLocalOnly('product', {
@@ -511,6 +525,7 @@ window.BusinessService = (function(){
       productosNuevos++;
     }
     for(const c of (resp.clientes||[])){
+      if(c.deleted) continue;
       const existente = await StorageService.getEntity('client', c.client_id);
       if(existente) continue;
       await StorageService.putEntityLocalOnly('client', {
@@ -578,6 +593,168 @@ window.BusinessService = (function(){
     return eliminados;
   }
 
+  /* =================== REPLICACIÓN AUTOMÁTICA (Sheets = autoridad) ===================
+     A diferencia de traerCatalogoDelServidor (manual, "no pisar nada
+     local", pensado para un dispositivo nuevo/vacío), esto corre solo en
+     segundo plano y SÍ pisa lo local con lo que diga el servidor —
+     salvo que este mismo dispositivo tenga todavía un cambio sin
+     sincronizar para esa entidad puntual (se fija en el outbox por
+     entity_type+entity_id), para no perder una edición recién hecha acá
+     que todavía no llegó al central. Así, cargar un costo/precio en un
+     dispositivo termina reflejado en todos los demás del mismo local, y
+     cualquier boleta o gasto (los haya cargado quien los haya cargado)
+     queda editable/eliminable desde cualquier dispositivo una vez que se
+     replicó (ver ARCHITECTURE.md). */
+  let _replicando = false;
+
+  async function _idsPendientesPorTipo(pendientes, tipo){
+    return new Set(pendientes.filter(e=> e.entity_type===tipo).map(e=> String(e.entity_id)));
+  }
+
+  async function _replicarProductos(productos, pendientesIds){
+    let aplicados = 0;
+    for(const p of (productos||[])){
+      const id = String(p.product_id);
+      if(pendientesIds.has(id)) continue;
+      const previo = await StorageService.getEntity('product', id);
+      const actualizado = p.updated_at || Utils.nowISO();
+      const record = {
+        id, nombre: String(p.name||''), codigo: String(p.sku||''), categoria: String(p.category||''),
+        unidad: p.unit==='kg' ? 'kg' : 'unidad', costo: Number(p.cost)||0, precio: Number(p.price)||0,
+        margenPct: p.unit==='kg' ? Utils.calcularMargenSobreCosto(Number(p.price)||0, Number(p.cost)||0) : null,
+        desde_catalogo: previo ? !!previo.desde_catalogo : false,
+        created_at: (previo && previo.created_at) || actualizado,
+        updated_at: actualizado,
+        deleted_at: p.deleted ? actualizado : null
+      };
+      await StorageService.putEntityLocalOnly('product', record);
+      aplicados++;
+    }
+    return aplicados;
+  }
+
+  async function _replicarClientes(clientes, pendientesIds){
+    let aplicados = 0;
+    for(const c of (clientes||[])){
+      const id = String(c.client_id);
+      if(pendientesIds.has(id)) continue;
+      const previo = await StorageService.getEntity('client', id);
+      const actualizado = c.updated_at || Utils.nowISO();
+      const record = {
+        id, nombre: String(c.name||''), nombre_lower: _nombreLower(String(c.name||'')),
+        telefono: c.phone||'', direccion: c.address||'',
+        created_at: (previo && previo.created_at) || actualizado,
+        updated_at: actualizado,
+        deleted_at: c.deleted ? actualizado : null
+      };
+      await StorageService.putEntityLocalOnly('client', record);
+      aplicados++;
+    }
+    return aplicados;
+  }
+
+  async function _replicarVentas(ventas, pendientesIds){
+    let aplicados = 0;
+    for(const v of (ventas||[])){
+      const id = String(v.id);
+      if(pendientesIds.has(id)) continue;
+      const previo = await StorageService.getEntity('sale', id);
+      const actualizado = v.updated_at || v.created_at || Utils.nowISO();
+      const record = {
+        id, numero: v.numero, fecha: v.fecha,
+        cliente_id: v.cliente_id||null, cliente_nombre_snapshot: v.cliente_nombre_snapshot||'',
+        items: (v.items||[]).map(it=>({...it})),
+        total: Number(v.total)||0, costo_total: Number(v.costo_total)||0, ganancia: Number(v.ganancia)||0,
+        hora_inicio: (previo && previo.hora_inicio) || null,
+        created_at: v.created_at || (previo && previo.created_at) || actualizado,
+        updated_at: actualizado,
+        deleted_at: v.deleted ? actualizado : null
+      };
+      await StorageService.putEntityLocalOnly('sale', record);
+      aplicados++;
+    }
+    return aplicados;
+  }
+
+  async function _replicarGastos(gastos, pendientesIds){
+    let aplicados = 0;
+    for(const g of (gastos||[])){
+      const id = String(g.id);
+      if(pendientesIds.has(id)) continue;
+      const previo = await StorageService.getEntity('expense', id);
+      const actualizado = g.updated_at || Utils.nowISO();
+      const record = {
+        id, fecha: g.fecha, categoria: g.categoria||'Otros', descripcion: g.descripcion||'',
+        monto: Number(g.monto)||0,
+        created_at: (previo && previo.created_at) || actualizado,
+        updated_at: actualizado,
+        deleted_at: g.deleted ? actualizado : null
+      };
+      await StorageService.putEntityLocalOnly('expense', record);
+      aplicados++;
+    }
+    return aplicados;
+  }
+
+  // proximoNumero NO se toca desde acá: es un contador de numeración de
+  // boletas que vive local por dispositivo (nunca viajó de forma
+  // confiable por fuera de un guardado explícito en Configuración — ver
+  // el comentario de filaConfig_/CONFIG_CURRENT.next_number). Pisarlo en
+  // cada ciclo de replicación automática podría hacer retroceder el
+  // contador de un dispositivo activo justo mientras está cargando una
+  // boleta y generar números repetidos. El resto de los campos de
+  // Configuración sí son autoridad del servidor.
+  async function _replicarConfig(config, hayConfigPendiente){
+    if(!config || hayConfigPendiente) return false;
+    const actual = await StorageService.getConfig();
+    await StorageService.setConfigLocalOnly({
+      ...actual,
+      nombre: config.name || actual.nombre,
+      telefono: config.phone!=null ? config.phone : actual.telefono,
+      direccion: config.address!=null ? config.address : actual.direccion,
+      cuit: config.cuit!=null ? config.cuit : actual.cuit,
+      pie: config.footer_text || actual.pie,
+      moneda: config.currency || actual.moneda
+    });
+    return true;
+  }
+
+  // Punto de entrada de la replicación automática: se llama en segundo
+  // plano (ver app.js, tras cada sync exitosa, y desde el auto-refresco de
+  // las pantallas de Productos/Clientes). Evita superponerse consigo misma
+  // si ya hay una corrida en curso.
+  async function replicarDesdeServidor(){
+    if(_replicando) return {ok:false, error:'ya_en_curso'};
+    _replicando = true;
+    try{
+      const [respState, respHist] = await Promise.all([
+        SyncService.pullState(),
+        SyncService.historialCombinado()
+      ]);
+      const pendientes = await StorageService.outboxPendientes();
+
+      let productos=0, clientes=0, ventas=0, gastos=0, configAplicada=false;
+
+      if(respState && respState.ok===true){
+        productos = await _replicarProductos(respState.productos, await _idsPendientesPorTipo(pendientes,'product'));
+        clientes = await _replicarClientes(respState.clientes, await _idsPendientesPorTipo(pendientes,'client'));
+        const hayConfigPendiente = pendientes.some(e=> e.entity_type==='config');
+        configAplicada = await _replicarConfig(respState.config, hayConfigPendiente);
+      }
+      if(respHist && respHist.ok===true){
+        ventas = await _replicarVentas(respHist.ventas, await _idsPendientesPorTipo(pendientes,'sale'));
+        gastos = await _replicarGastos(respHist.gastos, await _idsPendientesPorTipo(pendientes,'expense'));
+      }
+
+      return { ok:true, productos, clientes, ventas, gastos, configAplicada };
+    } catch(e){
+      console.error('[BusinessService] falló replicarDesdeServidor:', e);
+      return { ok:false, error:'sin_conexion' };
+    } finally {
+      _replicando = false;
+    }
+  }
+
   return {
     listarProductos, guardarProducto, actualizarCostoInline, actualizarPrecioInline, actualizarMargenInline, eliminarProducto, restaurarEliminado,
     listarClientes, buscarClientePorNombre, registrarClienteSiNoExiste, actualizarClienteInline, eliminarCliente, estadisticasCliente,
@@ -588,6 +765,7 @@ window.BusinessService = (function(){
     listarVentasCombinado, listarGastosCombinado,
     exportarBackupJSON, restaurarBackupJSON,
     necesitaResyncCompleto, ejecutarResyncCompleto,
-    traerCatalogoDelServidor, adoptarCatalogoNuevo, eliminarCatalogoBorrado
+    traerCatalogoDelServidor, adoptarCatalogoNuevo, eliminarCatalogoBorrado,
+    replicarDesdeServidor
   };
 })();

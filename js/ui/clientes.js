@@ -48,6 +48,12 @@ window.UiClientes = (function(){
 
   function init(){
     document.getElementById('clienteBuscar').addEventListener('input', render);
+    // Mismo patrón que Productos/Boletas/Gastos (ver ui/nav.js): mientras
+    // esta pantalla está abierta, refresca cada 15s desde el servidor.
+    window.UiNav.autoActualizar('clientes', 15000, async ()=>{
+      await BusinessService.replicarDesdeServidor();
+      await render();
+    });
   }
   window.ViewHandlers.clientes = render;
   return { init };

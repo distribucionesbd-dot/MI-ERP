@@ -67,6 +67,27 @@
     }
   }
 
+  // Replicación automática (Sheets = autoridad máxima, ver ARCHITECTURE.md):
+  // después de cada sincronización exitosa (al abrir la app, cada 10 min,
+  // al reconectar, al volver a la pestaña, o poco después de cualquier
+  // cambio local), trae el estado del servidor y lo escribe local, así lo
+  // cargado en OTRO dispositivo de este mismo local aparece acá también.
+  // El chequeo de "hace menos de 5s" evita repetir el trabajo si el estado
+  // pasa por 'sincronizado' varias veces seguidas en poco tiempo.
+  let _ultimaReplicacionAt = 0;
+  async function revisarReplicacionCompleta(status){
+    if(status.state !== 'sincronizado') return;
+    if(Date.now() - _ultimaReplicacionAt < 5000) return;
+    _ultimaReplicacionAt = Date.now();
+    const res = await BusinessService.replicarDesdeServidor();
+    if(res.ok && (res.productos || res.clientes || res.ventas || res.gastos || res.configAplicada)){
+      // Configuración queda afuera a propósito: si el usuario está en ese
+      // momento escribiendo en el formulario, recargarlo pisaría lo que
+      // está tipeando. El resto de las pantallas no tiene ese riesgo.
+      if(window.UiNav.currentView()!=='config') await recargarVistaActual();
+    }
+  }
+
   async function bootstrapApp(session){
     await StorageService.init(session.store_id, session.device_id);
     SyncService.init(session);
@@ -84,6 +105,7 @@
     SyncService.onStatusChange(actualizarIndicadorHeader);
     SyncService.onStatusChange(revisarCatalogoNuevo);
     SyncService.onStatusChange(revisarCatalogoEliminado);
+    SyncService.onStatusChange(revisarReplicacionCompleta);
     actualizarIndicadorHeader(SyncService.getStatus());
 
     await UiVenta.verificarBorradorAlIniciar();
