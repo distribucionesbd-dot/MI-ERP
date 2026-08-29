@@ -92,6 +92,19 @@ window.BusinessService = (function(){
     return {ok:true};
   }
 
+  // Deshacer una eliminación reciente (Fase 3, punto 7: menos confirm(),
+  // más "Deshacer"). removeEntity nunca borra el registro físicamente —
+  // solo le pone una marca de borrado (deleted_at) — así que deshacer es
+  // sacarle esa marca y volver a mandarlo a sincronizar. Sirve igual para
+  // productos, clientes y gastos (mismo mecanismo de tombstone en los tres).
+  async function restaurarEliminado(entityType, id){
+    const record = await StorageService.getEntity(entityType, id);
+    if(!record) return {ok:false, error:'No se pudo deshacer: el registro ya no está'};
+    record.deleted_at = null;
+    await StorageService.putEntity(entityType, record, 'updated');
+    return {ok:true, data: record};
+  }
+
   /* =================== CLIENTES =================== */
   function _nombreLower(n){ return (n||'').trim().toLowerCase(); }
 
@@ -197,12 +210,18 @@ window.BusinessService = (function(){
   // Distinto y mutuamente excluyente de "editar boleta histórica": el borrador
   // sólo existe para una venta NUEVA todavía no finalizada.
   async function guardarBorrador(draft){
-    if(!draft.items || !draft.items.length){ await StorageService.clearDraftVenta(); return; }
+    // Nada que guardar: ni ítems confirmados ni un renglón a medio escribir
+    // (producto/cantidad/precio todavía sin "+ Agregar producto"). Si hay
+    // AL MENOS uno de los dos, el borrador se guarda igual, para no perder
+    // ni siquiera una línea que se estaba tipeando.
+    const tieneItems = draft.items && draft.items.length;
+    if(!tieneItems && !draft.itemEnProgreso){ await StorageService.clearDraftVenta(); return; }
     await StorageService.setDraftVenta({
-      items: draft.items.map(it=>({...it})),
+      items: tieneItems ? draft.items.map(it=>({...it})) : [],
       cliente: draft.cliente||'',
       fecha: draft.fecha || Utils.hoyISO(),
       horaInicio: draft.horaInicio || null,
+      itemEnProgreso: draft.itemEnProgreso || null,
       ultimaModificacion: Utils.nowISO()
     });
   }
@@ -240,40 +259,62 @@ window.BusinessService = (function(){
   }
 
   /* =================== DASHBOARD Y REPORTES =================== */
+  // Compara dos totales y devuelve el % de variación en un formato ya listo
+  // para mostrar (Fase 4, punto 10: "preparar el dashboard para comparar
+  // con el período anterior"). null cuando no hay con qué comparar (ej. no
+  // hubo ventas ayer) para no mostrar un "+Infinity%" sin sentido.
+  function _compararTotales(actual, anterior){
+    if(!anterior){
+      if(!actual) return null;
+      return { pct:null, texto:'sin ventas el día anterior para comparar' };
+    }
+    const pct = ((actual-anterior)/anterior)*100;
+    const signo = pct>=0 ? '+' : '';
+    return { pct, texto: signo + pct.toFixed(0) + '% vs. el día anterior' };
+  }
+
   async function calcularDashboard(){
     const hoy = Utils.hoyISO();
+    const ayer = Utils.ayerISO();
     const ventas = await StorageService.listEntities('sale');
     const gastos = await StorageService.listEntities('expense');
     const productos = await StorageService.listEntities('product');
 
     const ventasHoy = ventas.filter(v=>v.fecha===hoy);
+    const ventasAyer = ventas.filter(v=>v.fecha===ayer);
     const inicioMesISO = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10);
     const gastosMes = gastos.filter(g=>g.fecha>=inicioMesISO).reduce((s,g)=>s+g.monto,0);
+    const ventasHoyTotal = ventasHoy.reduce((s,v)=>s+v.total,0);
+    const ventasAyerTotal = ventasAyer.reduce((s,v)=>s+v.total,0);
 
     return {
-      ventasHoyTotal: ventasHoy.reduce((s,v)=>s+v.total,0),
+      ventasHoyTotal,
       operacionesHoy: ventasHoy.length,
+      ticketPromedioHoy: ventasHoy.length ? ventasHoyTotal/ventasHoy.length : 0,
       gananciaHoy: ventasHoy.reduce((s,v)=>s+v.ganancia,0),
       gastosMes,
       productosCount: productos.length,
+      comparacionVsAyer: _compararTotales(ventasHoyTotal, ventasAyerTotal),
       ultimasVentas: ventas.slice().sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,5)
     };
   }
 
-  // Igual que calcularDashboard, pero si hay conexión reemplaza los 5
-  // números principales (ventas/operaciones/ganancia de hoy, gastos del
-  // mes, cantidad de productos) por los totales agregados del servidor,
-  // que incluyen lo cargado desde CUALQUIER dispositivo de este local
-  // (no solo este). "Últimas boletas" queda siempre local (para poder
-  // reimprimir), porque el detalle completo de una venta hecha en otro
-  // dispositivo no está en este — ver ARCHITECTURE.md.
+  // Igual que calcularDashboard, pero si hay conexión reemplaza los números
+  // principales (ventas/operaciones/margen de hoy, gastos del mes, cantidad
+  // de productos, comparación con el día anterior) por los totales
+  // agregados del servidor, que incluyen lo cargado desde CUALQUIER
+  // dispositivo de este local (no solo este). "Últimas boletas" queda
+  // siempre local (para poder reimprimir), porque el detalle completo de
+  // una venta hecha en otro dispositivo no está en este — ver ARCHITECTURE.md.
   async function calcularDashboardCombinado(){
     const local = await calcularDashboard();
     const resp = await SyncService.dashboardResumen();
     if(!resp || resp.ok!==true) return { ...local, combinado:false };
     return {
       ventasHoyTotal: resp.ventasHoyTotal, operacionesHoy: resp.operacionesHoy,
+      ticketPromedioHoy: resp.operacionesHoy ? resp.ventasHoyTotal/resp.operacionesHoy : 0,
       gananciaHoy: resp.gananciaHoy, gastosMes: resp.gastosMes, productosCount: resp.productosCount,
+      comparacionVsAyer: _compararTotales(resp.ventasHoyTotal, resp.ventasAyerTotal||0),
       ultimasVentas: local.ultimasVentas, combinado:true
     };
   }
@@ -293,9 +334,10 @@ window.BusinessService = (function(){
       (v.items||[]).forEach(it=>{
         const key = it.producto_id || ('libre:'+it.nombre);
         if(!aggProd[key]) aggProd[key] = {nombre:it.nombre, cantidad:0, unidad:it.unidad||'unidad', total:0, ganancia:0};
+        const subtotal = Utils.subtotalItem(it);
         aggProd[key].cantidad += it.cantidad;
-        aggProd[key].total += it.cantidad*it.precio;
-        aggProd[key].ganancia += it.cantidad*(it.precio-(it.costo||0));
+        aggProd[key].total += subtotal;
+        aggProd[key].ganancia += subtotal - it.cantidad*(it.costo||0);
       });
     });
     const porProducto = Object.values(aggProd).sort((a,b)=>b.total-a.total);
@@ -507,8 +549,26 @@ window.BusinessService = (function(){
     return adoptados;
   }
 
+  // Productos que el administrador borró del catálogo compartido con la
+  // opción "quitar también de los locales que ya lo tienen" (ver
+  // SyncService/status.catalogoEliminado). Se borran acá con el mismo
+  // mecanismo que un borrado manual (tombstone + evento 'deleted' por
+  // outbox), así que el borrado también sincroniza normalmente. Si ya no
+  // existe localmente (por ejemplo, ya se había borrado a mano antes) no
+  // pasa nada: eliminarProducto/removeEntity no hace nada en ese caso.
+  async function eliminarCatalogoBorrado(catalogIds){
+    let eliminados = 0;
+    for(const catalogId of (catalogIds||[])){
+      const existente = await StorageService.getEntity('product', catalogId);
+      if(!existente) continue;
+      await eliminarProducto(catalogId);
+      eliminados++;
+    }
+    return eliminados;
+  }
+
   return {
-    listarProductos, guardarProducto, actualizarCostoInline, actualizarPrecioInline, actualizarMargenInline, eliminarProducto,
+    listarProductos, guardarProducto, actualizarCostoInline, actualizarPrecioInline, actualizarMargenInline, eliminarProducto, restaurarEliminado,
     listarClientes, buscarClientePorNombre, registrarClienteSiNoExiste, actualizarClienteInline, eliminarCliente, estadisticasCliente,
     listarVentas, obtenerVenta, crearVenta, editarVenta, eliminarVenta,
     guardarBorrador, obtenerBorrador, borrarBorrador,
@@ -517,6 +577,6 @@ window.BusinessService = (function(){
     listarVentasCombinado, listarGastosCombinado,
     exportarBackupJSON, restaurarBackupJSON,
     necesitaResyncCompleto, ejecutarResyncCompleto,
-    traerCatalogoDelServidor, adoptarCatalogoNuevo
+    traerCatalogoDelServidor, adoptarCatalogoNuevo, eliminarCatalogoBorrado
   };
 })();

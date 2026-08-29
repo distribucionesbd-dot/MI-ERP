@@ -9,6 +9,37 @@ window.UiProductos = (function(){
     document.getElementById('ayudaProdKg').style.display = esKg ? 'block' : 'none';
     document.getElementById('lblProdCosto').textContent = esKg ? 'Costo por kilo *' : 'Precio de costo *';
     document.getElementById('lblProdPrecio').textContent = esKg ? 'Precio de venta por kilo *' : 'Precio de venta *';
+    _actualizarPreviewMargen();
+  }
+
+  // Vista previa en vivo de Costo/Venta/Margen bruto al cargar o editar un
+  // producto (Fase 4, punto 10): mismo % que se ve después en el listado
+  // (Utils.calcularMargenSobreVenta = margen sobre el precio de venta), para
+  // no mezclar fórmulas distintas bajo la misma palabra "margen". Si el
+  // precio de venta queda por debajo del costo, se avisa claro (sin bloquear
+  // el guardado: puede ser una promoción intencional).
+  function _actualizarPreviewMargen(){
+    const el = document.getElementById('prodMargenPreview');
+    if(!el) return;
+    const costo = parseFloat(document.getElementById('prodCosto').value);
+    let precio = parseFloat(document.getElementById('prodPrecio').value);
+    const esKg = document.getElementById('prodUnidad').value === 'kg';
+    const margenInput = document.getElementById('prodMargenPct').value;
+    if(esKg && margenInput!=='' && !isNaN(parseFloat(margenInput)) && !isNaN(costo)){
+      precio = Utils.calcularPrecioDesdeMargenSobreCosto(costo, parseFloat(margenInput));
+    }
+    if(isNaN(costo) || isNaN(precio)){ el.textContent=''; el.className='muted'; return; }
+    const moneda = (_config && _config.moneda) || '$';
+    if(precio < costo){
+      el.className = 'margen-preview-warn';
+      el.textContent = '⚠ El precio de venta (' + Utils.fmtMoneda(precio,moneda) + ') es menor al costo (' + Utils.fmtMoneda(costo,moneda) + '). Vas a perder dinero en cada venta de este producto.';
+      return;
+    }
+    const margenBruto = precio - costo;
+    const margenPctVenta = Utils.calcularMargenSobreVenta(precio, costo);
+    el.className = 'margen-preview-ok';
+    el.textContent = 'Costo ' + Utils.fmtMoneda(costo,moneda) + ' · Venta ' + Utils.fmtMoneda(precio,moneda) +
+      ' · Margen bruto ' + Utils.fmtMoneda(margenBruto,moneda) + ' (' + margenPctVenta.toFixed(1).replace('.',',') + '%)';
   }
 
   function limpiarForm(){
@@ -20,7 +51,7 @@ window.UiProductos = (function(){
     document.getElementById('prodPrecio').value = '';
     document.getElementById('prodCategoria').value = '';
     document.getElementById('prodMargenPct').value = '';
-    onCambiaUnidadForm();
+    onCambiaUnidadForm(); // ya actualiza la vista previa de margen
     document.getElementById('prodFormTitle').textContent = 'Nuevo producto';
     document.getElementById('btnCancelarProd').style.display = 'none';
   }
@@ -61,11 +92,18 @@ window.UiProductos = (function(){
     SyncService.scheduleOpportunistic();
   }
 
+  // Reversible sin fricción: las boletas ya emitidas no se tocan igual, así
+  // que en vez de un confirm() se avisa con un toast y "Deshacer" unos
+  // segundos (Fase 3, punto 7).
   async function eliminar(id){
-    if(!confirm('¿Eliminar este producto del catálogo? Las boletas ya emitidas no se modifican.')) return;
     await BusinessService.eliminarProducto(id);
     await render();
     SyncService.scheduleOpportunistic();
+    UiToast.toastAccion('Producto eliminado del catálogo', 'Deshacer', async ()=>{
+      await BusinessService.restaurarEliminado('product', id);
+      await render();
+      SyncService.scheduleOpportunistic();
+    });
   }
 
   async function render(){
@@ -91,19 +129,19 @@ window.UiProductos = (function(){
       const esKg = p.unidad==='kg';
       const margen = Utils.calcularMargenSobreVenta(p.precio, p.costo);
       const margenPctCell = esKg
-        ? `<input type="number" step="1" min="0" value="${p.margenPct!=null?p.margenPct:''}" data-margen="${p.id}" style="${(p.margenPct!=null && p.margenPct<50)?'border-color:#dc2626;color:#dc2626;':''}">`
+        ? `<input type="number" step="1" min="0" value="${p.margenPct!=null?p.margenPct:''}" data-margen="${p.id}" style="${(p.margenPct!=null && p.margenPct<50)?'border-color:var(--danger);color:var(--danger);':''}">`
         : '<span class="muted">-</span>';
       const tr = document.createElement('tr');
-      if(_faltaPrecio(p)) tr.style.background = '#fffbeb';
+      if(_faltaPrecio(p)) tr.style.background = 'var(--tint-warning-bg)';
       tr.innerHTML = `
-        <td data-label="Nombre">${Utils.escapeHtml(p.nombre)}${_faltaPrecio(p)?' <span class="tag" style="background:#fef3c7;color:#92400e;">Cargado por admin · falta precio</span>':''}</td>
+        <td data-label="Nombre">${Utils.escapeHtml(p.nombre)}${_faltaPrecio(p)?' <span class="tag" style="background:var(--tint-warning-bg);color:var(--tint-warning-text);">Cargado por admin · falta precio</span>':''}</td>
         <td data-label="Código">${Utils.escapeHtml(p.codigo||'-')}</td>
         <td data-label="Categoría">${p.categoria?`<span class="tag">${Utils.escapeHtml(p.categoria)}</span>`:'-'}</td>
         <td data-label="Unidad">${esKg?'Kg':'Unidad'}</td>
         <td class="right" data-label="Costo"><input type="number" step="0.01" min="0" value="${p.costo}" data-costo="${p.id}"></td>
         <td class="right" data-label="Venta"><input type="number" step="0.01" min="0" value="${p.precio}" data-precio="${p.id}"></td>
         <td class="right" data-label="% s/costo">${margenPctCell}</td>
-        <td class="right" data-label="Margen">${margen.toFixed(1)}%</td>
+        <td class="right" data-label="Margen bruto">${margen<0?`<span class="margen-negativo">⚠ ${margen.toFixed(1)}%</span>`:margen.toFixed(1)+'%'}</td>
         <td class="actions-cell">
           <a class="link" data-editar="${p.id}">Editar</a> ·
           <a class="link" data-eliminar="${p.id}">Eliminar</a>
@@ -125,13 +163,16 @@ window.UiProductos = (function(){
     }));
     tbody.querySelectorAll('[data-margen]').forEach(inp=> inp.addEventListener('change', async ()=>{
       const r = await BusinessService.actualizarMargenInline(inp.dataset.margen, inp.value);
-      if(!r.ok) UiToast.toast(r.error); else UiToast.toast('% de ganancia actualizado');
+      if(!r.ok) UiToast.toast(r.error); else UiToast.toast('% de margen actualizado');
       render(); SyncService.scheduleOpportunistic();
     }));
   }
 
   function init(){
     document.getElementById('prodUnidad').addEventListener('change', onCambiaUnidadForm);
+    document.getElementById('prodCosto').addEventListener('input', _actualizarPreviewMargen);
+    document.getElementById('prodPrecio').addEventListener('input', _actualizarPreviewMargen);
+    document.getElementById('prodMargenPct').addEventListener('input', _actualizarPreviewMargen);
     document.getElementById('btnGuardarProducto').addEventListener('click', guardar);
     document.getElementById('btnCancelarProd').addEventListener('click', limpiarForm);
     document.getElementById('prodBuscar').addEventListener('input', render);

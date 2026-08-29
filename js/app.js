@@ -47,6 +47,26 @@
     }
   }
 
+  // Si el administrador quitó un producto del catálogo compartido con la
+  // opción "quitar también de los locales que ya lo tienen", el servidor
+  // lo devuelve en cada sincronización (status.catalogoEliminado). Lo
+  // borramos localmente (mismo mecanismo que un borrado manual, así que
+  // también sincroniza) y avisamos con un toast.
+  let _borrandoCatalogo = false;
+  async function revisarCatalogoEliminado(status){
+    if(!status.catalogoEliminado || !status.catalogoEliminado.length || _borrandoCatalogo) return;
+    _borrandoCatalogo = true;
+    try{
+      const cantidad = await BusinessService.eliminarCatalogoBorrado(status.catalogoEliminado);
+      if(cantidad > 0){
+        UiToast.toast(cantidad===1 ? 'El administrador quitó 1 producto del catálogo compartido.' : 'El administrador quitó ' + cantidad + ' productos del catálogo compartido.');
+        await recargarVistaActual();
+      }
+    } finally {
+      _borrandoCatalogo = false;
+    }
+  }
+
   async function bootstrapApp(session){
     await StorageService.init(session.store_id, session.device_id);
     SyncService.init(session);
@@ -63,6 +83,7 @@
     });
     SyncService.onStatusChange(actualizarIndicadorHeader);
     SyncService.onStatusChange(revisarCatalogoNuevo);
+    SyncService.onStatusChange(revisarCatalogoEliminado);
     actualizarIndicadorHeader(SyncService.getStatus());
 
     await UiVenta.verificarBorradorAlIniciar();

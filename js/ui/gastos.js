@@ -36,12 +36,18 @@ window.UiGastos = (function(){
     SyncService.scheduleOpportunistic();
     if(window.ViewHandlers.dashboard) window.ViewHandlers.dashboard();
   }
+  // Reversible con "Deshacer" en vez de un confirm() (Fase 3, punto 7).
   async function eliminar(id){
-    if(!confirm('¿Eliminar este gasto?')) return;
     await BusinessService.eliminarGasto(id);
     SyncService.scheduleOpportunistic();
     render();
     if(window.ViewHandlers.dashboard) window.ViewHandlers.dashboard();
+    UiToast.toastAccion('Gasto eliminado', 'Deshacer', async ()=>{
+      await BusinessService.restaurarEliminado('expense', id);
+      SyncService.scheduleOpportunistic();
+      render();
+      if(window.ViewHandlers.dashboard) window.ViewHandlers.dashboard();
+    });
   }
   function limpiarFiltro(){
     document.getElementById('gastosDesde').value='';

@@ -43,7 +43,7 @@ window.UiReportes = (function(){
     document.getElementById('topProductosEmpty').style.display = r.porProducto.length ? 'none':'block';
     r.porProducto.forEach(t=>{
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td data-label="Producto">${Utils.escapeHtml(t.nombre)}</td><td class="right" data-label="Cantidad">${Utils.fmtCantidad(t.cantidad, t.unidad)}</td><td class="right" data-label="Total vendido">${Utils.fmtMoneda(t.total, config.moneda)}</td><td class="right" data-label="Ganancia">${Utils.fmtMoneda(t.ganancia, config.moneda)}</td>`;
+      tr.innerHTML = `<td data-label="Producto">${Utils.escapeHtml(t.nombre)}</td><td class="right" data-label="Cantidad">${Utils.fmtCantidad(t.cantidad, t.unidad)}</td><td class="right" data-label="Total vendido">${Utils.fmtMoneda(t.total, config.moneda)}</td><td class="right" data-label="Margen bruto">${Utils.fmtMoneda(t.ganancia, config.moneda)}</td>`;
       tbP.appendChild(tr);
     });
 
@@ -52,7 +52,7 @@ window.UiReportes = (function(){
     document.getElementById('topClientesEmpty').style.display = r.porCliente.length ? 'none':'block';
     r.porCliente.forEach(c=>{
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td data-label="Cliente">${Utils.escapeHtml(c.nombre)}</td><td class="right" data-label="Compras">${c.compras}</td><td class="right" data-label="Total vendido">${Utils.fmtMoneda(c.total, config.moneda)}</td><td class="right" data-label="Ganancia">${Utils.fmtMoneda(c.ganancia, config.moneda)}</td>`;
+      tr.innerHTML = `<td data-label="Cliente">${Utils.escapeHtml(c.nombre)}</td><td class="right" data-label="Compras">${c.compras}</td><td class="right" data-label="Total vendido">${Utils.fmtMoneda(c.total, config.moneda)}</td><td class="right" data-label="Margen bruto">${Utils.fmtMoneda(c.ganancia, config.moneda)}</td>`;
       tbC.appendChild(tr);
     });
   }

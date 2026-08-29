@@ -13,7 +13,7 @@
    la versión nueva apenas detecten el service worker distinto
    (REGLA 9).
    ========================================================= */
-const CACHE_VERSION = 'v1.0.6';
+const CACHE_VERSION = 'v1.0.9';
 const CACHE_NAME = 'mi-erp-' + CACHE_VERSION;
 
 const APP_SHELL = [
@@ -21,7 +21,7 @@ const APP_SHELL = [
   './css/app.css',
   './js/config.js', './js/utils.js', './js/db.js', './js/storage-service.js',
   './js/auth-service.js', './js/business-service.js', './js/sync-service.js', './js/migration.js',
-  './js/ui/toast.js', './js/ui/modal.js', './js/ui/nav.js', './js/ui/login.js',
+  './js/ui/toast.js', './js/ui/nav.js', './js/ui/login.js',
   './js/ui/dashboard.js', './js/ui/productos.js', './js/ui/venta.js', './js/ui/boletas.js',
   './js/ui/clientes.js', './js/ui/gastos.js', './js/ui/reportes.js', './js/ui/config.js',
   './js/app.js',

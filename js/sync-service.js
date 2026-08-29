@@ -13,7 +13,7 @@ window.SyncService = (function(){
   let _syncing = false;
   let _backoffAttempts = 0;
   let _listeners = [];
-  let _status = { state:'pendiente', pendingCount:0, lastSuccessfulSyncAt:null, lastError:null, catalogoNuevo:[] };
+  let _status = { state:'pendiente', pendingCount:0, lastSuccessfulSyncAt:null, lastError:null, catalogoNuevo:[], catalogoEliminado:[] };
   let _timerInterval = null;
   let _visibilityDebounced = null;
 
@@ -81,7 +81,10 @@ window.SyncService = (function(){
             action:'syncBatch', store_id:_session.store_id, device_id:_session.device_id,
             token:_session.token, events:[]
           });
-          if(ack && ack.ok===true) _status.catalogoNuevo = ack.catalogo_nuevo || [];
+          if(ack && ack.ok===true){
+            _status.catalogoNuevo = ack.catalogo_nuevo || [];
+            _status.catalogoEliminado = ack.catalogo_eliminado || [];
+          }
         }catch(e){ /* si esto falla no es grave: no había nada pendiente igual */ }
         _emit();
         return _status;
@@ -120,6 +123,7 @@ window.SyncService = (function(){
         }
 
         _status.catalogoNuevo = ack.catalogo_nuevo || [];
+        _status.catalogoEliminado = ack.catalogo_eliminado || [];
 
         const aceptados = (ack.accepted_event_ids||[]).concat(ack.duplicate_event_ids||[]);
         if(aceptados.length){
@@ -174,7 +178,7 @@ window.SyncService = (function(){
     try{
       return await _fetchConTimeout({
         action:'dashboardResumen', store_id:_session.store_id, device_id:_session.device_id,
-        token:_session.token, hoy: Utils.hoyISO()
+        token:_session.token, hoy: Utils.hoyISO(), ayer: Utils.ayerISO()
       });
     }catch(e){
       return {ok:false, error:'sin_conexion'};
@@ -200,6 +204,17 @@ window.SyncService = (function(){
   }
 
   function scheduleOpportunistic(){
+    // El intento real de red respeta la demora de siempre (para no mandar
+    // un request por cada tecla), pero el indicador que ve el usuario se
+    // actualiza YA con la cantidad de cambios pendientes: así nunca queda
+    // mostrando "Todo guardado" varios segundos después de cargar algo
+    // nuevo sin conexión (Fase 3, punto 9 — feedback simple y honesto).
+    _refreshPendingCount().then(()=>{
+      if(_status.state!=='sincronizando'){
+        _status.state = navigator.onLine===false ? 'sin_conexion' : 'pendiente';
+        _emit();
+      }
+    });
     setTimeout(()=> syncNow(), cfg.SYNC_AFTER_OP_DELAY_MS);
   }
 

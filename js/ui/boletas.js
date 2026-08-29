@@ -61,7 +61,7 @@ window.UiBoletas = (function(){
         <td data-label="Cliente">${Utils.escapeHtml(v.cliente_nombre_snapshot||'-')}</td>
         <td class="right" data-label="Costo">${Utils.fmtMoneda(v.costo_total, config.moneda)}</td>
         <td class="right" data-label="Total">${Utils.fmtMoneda(v.total, config.moneda)}</td>
-        <td class="right" data-label="Ganancia">${Utils.fmtMoneda(v.ganancia, config.moneda)}</td>
+        <td class="right" data-label="Margen bruto">${Utils.fmtMoneda(v.ganancia, config.moneda)}</td>
         <td class="actions-cell">${acciones}</td>`;
       tbody.appendChild(tr);
     });

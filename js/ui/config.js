@@ -1,5 +1,43 @@
 window.UiConfig = (function(){
 
+  /* =================== APARIENCIA (tema y tamaño) ===================
+     Preferencia por dispositivo, en localStorage (no en la config del
+     negocio que sincroniza entre dispositivos): cada persona puede
+     querer un tema o tamaño distinto en su propio celular/PC. Se aplica
+     al toque, sin recargar la página, y también se guarda para que la
+     próxima vez que se abra la app arranque ya con el tema/tamaño
+     correctos (ver el script inline en el <head> de index.html). */
+  const LS_TEMA = 'erp_ui_theme';
+  const LS_TAMANO = 'erp_ui_size';
+
+  function _aplicarTema(tema){
+    if(tema==='light' || tema==='dark') document.documentElement.setAttribute('data-theme', tema);
+    else document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem(LS_TEMA, tema);
+    _marcarActivo('cfgTemaControl', 'tema', tema);
+  }
+  function _aplicarTamano(tam){
+    if(tam==='grande') document.documentElement.setAttribute('data-size', 'grande');
+    else document.documentElement.removeAttribute('data-size');
+    localStorage.setItem(LS_TAMANO, tam);
+    _marcarActivo('cfgTamanoControl', 'tam', tam);
+  }
+  function _marcarActivo(contId, attr, valor){
+    const cont = document.getElementById(contId);
+    if(!cont) return;
+    cont.querySelectorAll('.seg-btn').forEach(b=> b.classList.toggle('active', b.dataset[attr]===valor));
+  }
+  function _initApariencia(){
+    const temaGuardado = localStorage.getItem(LS_TEMA) || 'auto';
+    const tamGuardado = localStorage.getItem(LS_TAMANO) || 'normal';
+    _marcarActivo('cfgTemaControl', 'tema', temaGuardado);
+    _marcarActivo('cfgTamanoControl', 'tam', tamGuardado);
+    document.querySelectorAll('#cfgTemaControl .seg-btn').forEach(b=>
+      b.addEventListener('click', ()=> _aplicarTema(b.dataset.tema)));
+    document.querySelectorAll('#cfgTamanoControl .seg-btn').forEach(b=>
+      b.addEventListener('click', ()=> _aplicarTamano(b.dataset.tam)));
+  }
+
   async function cargarForm(){
     const config = await StorageService.getConfig();
     document.getElementById('cfgNombre').value = config.nombre||'';
@@ -177,6 +215,7 @@ window.UiConfig = (function(){
     document.getElementById('btnEjecutarResync').addEventListener('click', ejecutarResync);
     document.getElementById('diagTitleTap').addEventListener('click', onTapDiagnostico);
     document.getElementById('btnBorrarTodo').addEventListener('click', borrarTodo);
+    _initApariencia();
 
     SyncService.onStatusChange(()=>{ if(window.UiNav.currentView()==='config') actualizarEstadoSync(); });
   }

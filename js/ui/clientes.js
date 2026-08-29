@@ -5,11 +5,17 @@ window.UiClientes = (function(){
     UiToast.toast(campo==='telefono' ? 'Teléfono actualizado' : 'Dirección actualizada');
     SyncService.scheduleOpportunistic();
   }
+  // Reversible: no afecta boletas ya hechas, así que alcanza con un toast
+  // con "Deshacer" en vez de interrumpir con un confirm() (Fase 3, punto 7).
   async function eliminar(id){
-    if(!confirm('¿Eliminar este cliente de la lista? Las boletas que ya le hiciste no se borran.')) return;
     await BusinessService.eliminarCliente(id);
     SyncService.scheduleOpportunistic();
     render();
+    UiToast.toastAccion('Cliente eliminado', 'Deshacer', async ()=>{
+      await BusinessService.restaurarEliminado('client', id);
+      SyncService.scheduleOpportunistic();
+      render();
+    });
   }
 
   async function render(){

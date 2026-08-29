@@ -87,7 +87,7 @@
 
     <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
       <h3 style="margin:0 0 6px;font-size:13px;">Carga masiva (pegar texto o subir un .csv)</h3>
-      <p class="muted">Una línea por producto, columnas separadas por comas, en este orden: <b>Nombre, Código, Categoría, Unidad</b> (Código y Categoría son opcionales; Unidad: "unidad" o "kg" — si la dejás vacía, queda "unidad"). Si copiás un Excel/Sheets a esta caja, separalo con comas primero (Excel suele exportarlo así al guardar como .csv). Si la primera línea es un encabezado (por ej. "Nombre, Código..."), se ignora sola. No se vuelve a cargar un producto cuyo nombre ya esté en el catálogo.</p>
+      <p class="muted">Una línea por producto, columnas separadas por comas, en este orden: <b>Nombre, Código, Categoría, Unidad</b> (Código y Categoría son opcionales; Unidad: "unidad" o "kg" — si la dejás vacía, queda "unidad"). Si copiás un Excel/Sheets a esta caja, separalo con comas primero (Excel suele exportarlo así al guardar como .csv). Si algún dato tiene una coma adentro (por ejemplo un tamaño como "7,5 KG"), escribilo entre comillas para que no se corte ahí: <code>"EXCELLENT 7,5 KG",837,Excellent,unidad</code>. Si la primera línea es un encabezado (por ej. "Nombre, Código..."), se ignora sola. No se vuelve a cargar un producto cuyo nombre ya esté en el catálogo.</p>
       <p class="muted">Ejemplo:<br><code>Yerba La Merced 1kg, YER001, Almacén, unidad</code><br><code>Tomate, , Verdulería, kg</code></p>
       <textarea id="catMasivoTexto" rows="6" placeholder="Yerba La Merced 1kg, YER001, Almacén, unidad&#10;Coca Cola 500ml, COC500, Bebidas, unidad&#10;Tomate, , Verdulería, kg"></textarea>
       <div class="row" style="margin-top:8px;align-items:end;">
@@ -171,12 +171,18 @@ async function refrescarCatalogo(){
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${p.name}</td><td>${p.sku||'-'}</td><td>${p.category||'-'}</td><td>${p.unit==='kg'?'Kilo':'Unidad'}</td>
-      <td><a class="link" data-borrar="${p.catalog_id}">Quitar del catálogo</a></td>`;
+      <td><a class="link" data-borrar="${p.catalog_id}">Quitar del catálogo</a> ·
+          <a class="link" data-borrar-cascada="${p.catalog_id}" style="color:var(--danger);">Quitar también de los locales</a></td>`;
     tbody.appendChild(tr);
   });
   tbody.querySelectorAll('[data-borrar]').forEach(a=> a.addEventListener('click', async ()=>{
-    if(!confirm('¿Quitar este producto del catálogo compartido? Los locales que ya lo hayan recibido lo conservan igual; esto solo evita que se lo mande a los que todavía no lo tienen.')) return;
-    await llamar('adminDeleteCatalogProduct', {catalog_id:a.dataset.borrar});
+    if(!confirm('¿Quitar este producto del catálogo compartido? Los locales que ya lo hayan recibido lo conservan igual (con el costo/precio que le hayan puesto); esto solo evita que se lo mande a los que todavía no lo tienen.')) return;
+    await llamar('adminDeleteCatalogProduct', {catalog_id:a.dataset.borrar, cascade:false});
+    refrescarCatalogo();
+  }));
+  tbody.querySelectorAll('[data-borrar-cascada]').forEach(a=> a.addEventListener('click', async ()=>{
+    if(!confirm('¿Quitar este producto del catálogo Y borrarlo también de la lista de Productos de TODOS los locales que ya lo tengan? Esto incluye a los locales que ya le hayan puesto costo y precio: van a perder ese producto de su lista (no afecta boletas ya hechas con él). Se aplica en la próxima sincronización de cada local. Esta acción no se puede deshacer.')) return;
+    await llamar('adminDeleteCatalogProduct', {catalog_id:a.dataset['borrarCascada'], cascade:true});
     refrescarCatalogo();
   }));
 }
@@ -199,17 +205,41 @@ document.getElementById('btnAgregarCatalogo').addEventListener('click', async ()
   document.getElementById('catCategoria').value = '';
   refrescarCatalogo();
 });
+// Separa una línea en columnas por coma, entendiendo comillas dobles (como
+// cualquier CSV de Excel/Sheets): así "EXCELLENT 7,5 KG" (con una coma
+// adentro del nombre) no se corta por la mitad si viene escrito entre
+// comillas: "EXCELLENT 7,5 KG",837,Excellent,unidad
+function parsearLineaCSV(linea){
+  const cols = [];
+  let cur = '', enComillas = false;
+  for(let i=0;i<linea.length;i++){
+    const c = linea[i];
+    if(enComillas){
+      if(c==='"'){
+        if(linea[i+1]==='"'){ cur+='"'; i++; }
+        else enComillas = false;
+      } else cur += c;
+    } else {
+      if(c==='"') enComillas = true;
+      else if(c===','){ cols.push(cur); cur=''; }
+      else cur += c;
+    }
+  }
+  cols.push(cur);
+  return cols.map(c=>c.trim());
+}
+
 // Convierte el texto pegado (o el contenido de un .csv subido) en una
-// lista de productos {name, sku, category, unit}. Separador de columna:
-// coma. Si la primera línea parece un encabezado (arranca con "nombre",
-// "name" o "producto"), se descarta sola.
+// lista de productos {name, sku, category, unit}. Si la primera línea
+// parece un encabezado (arranca con "nombre", "name" o "producto"), se
+// descarta sola.
 function parsearProductosCSV(texto){
   const lineas = String(texto||'').split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
   if(!lineas.length) return [];
-  const primeraCol0 = lineas[0].split(',')[0].trim().toLowerCase();
+  const primeraCol0 = parsearLineaCSV(lineas[0])[0].toLowerCase();
   const filas = ['nombre','name','producto'].includes(primeraCol0) ? lineas.slice(1) : lineas;
   return filas.map(linea=>{
-    const cols = linea.split(',').map(c=>c.trim());
+    const cols = parsearLineaCSV(linea);
     const unidadRaw = (cols[3]||'').toLowerCase();
     const unit = (unidadRaw==='kg' || unidadRaw==='kilo' || unidadRaw==='kilogramo') ? 'kg' : 'unidad';
     return { name: cols[0]||'', sku: cols[1]||'', category: cols[2]||'', unit };

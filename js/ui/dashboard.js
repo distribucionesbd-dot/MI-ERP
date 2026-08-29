@@ -4,9 +4,21 @@ window.ViewHandlers.dashboard = async function renderDashboardUI(){
 
   document.getElementById('kpiVentasHoy').textContent = Utils.fmtMoneda(d.ventasHoyTotal, config.moneda);
   document.getElementById('kpiOperacionesHoy').textContent = d.operacionesHoy;
+  document.getElementById('kpiTicketPromedio').textContent = Utils.fmtMoneda(d.ticketPromedioHoy, config.moneda);
   document.getElementById('kpiGananciaHoy').textContent = Utils.fmtMoneda(d.gananciaHoy, config.moneda);
   document.getElementById('kpiGastosMes').textContent = Utils.fmtMoneda(d.gastosMes, config.moneda);
   document.getElementById('kpiProductos').textContent = d.productosCount;
+  // Comparación con el día anterior (Fase 4, punto 10): una sola línea de
+  // texto, sin gráficos — alcanza para que se entienda de un vistazo si hoy
+  // va mejor o peor que ayer.
+  const cmp = document.getElementById('kpiComparacionAyer');
+  if(d.comparacionVsAyer && d.comparacionVsAyer.pct!=null){
+    cmp.textContent = d.comparacionVsAyer.texto;
+    cmp.style.color = d.comparacionVsAyer.pct >= 0 ? 'var(--success)' : 'var(--danger)';
+  } else {
+    cmp.textContent = d.comparacionVsAyer ? d.comparacionVsAyer.texto : '';
+    cmp.style.color = '';
+  }
   document.getElementById('dashCombinadoAviso').textContent = d.combinado
     ? 'Estos totales suman todos los dispositivos de este local.'
     : 'Sin conexión: mostrando solo lo cargado en este dispositivo.';
