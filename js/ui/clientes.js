@@ -22,7 +22,7 @@ window.UiClientes = (function(){
     const config = await StorageService.getConfig();
     const filtro = (document.getElementById('clienteBuscar').value||'').toLowerCase();
     let lista = await BusinessService.listarClientes();
-    lista = lista.filter(c=> c.nombre.toLowerCase().includes(filtro));
+    lista = lista.filter(c=> String(c.nombre||'').toLowerCase().includes(filtro));
 
     const tbody = document.getElementById('tablaClientes');
     tbody.innerHTML = '';

@@ -97,7 +97,12 @@ main{padding:16px;max-width:1100px;margin:0 auto;padding-bottom:calc(var(--nav-h
 .row{display:flex;gap:var(--gap);flex-wrap:wrap;}
 .row > *{flex:1;min-width:140px;}
 label{display:block;font-size:var(--fs-label);color:var(--muted);margin-bottom:4px;margin-top:8px;}
-input, select, textarea{width:100%;padding:var(--control-pad-y) var(--control-pad-x);border:1px solid var(--border);border-radius:8px;font-size:var(--fs-base);background:var(--input-bg);color:var(--text);min-height:var(--control-min-h);}
+/* :not([type=checkbox]):not([type=radio]) — esos dos no deben heredar
+   ancho 100%/padding/alto mínimo de campo de texto: los deja gigantes y
+   deformados en vez de una casilla normal (bug real detectado: la casilla
+   "Solo venta por kilo" quedaba rota por esto). */
+input:not([type="checkbox"]):not([type="radio"]), select, textarea{width:100%;padding:var(--control-pad-y) var(--control-pad-x);border:1px solid var(--border);border-radius:8px;font-size:var(--fs-base);background:var(--input-bg);color:var(--text);min-height:var(--control-min-h);}
+input[type="checkbox"], input[type="radio"]{width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);}
 textarea{resize:vertical;min-height:auto;}
 button{cursor:pointer;font-family:inherit;}
 .btn{background:var(--primary);color:#fff;border:none;padding:var(--control-pad-y) 18px;border-radius:8px;font-size:var(--fs-base);font-weight:600;min-height:var(--control-min-h);}

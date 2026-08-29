@@ -10,7 +10,12 @@ window.BusinessService = (function(){
   /* =================== PRODUCTOS =================== */
   async function listarProductos(){
     const lista = await StorageService.listEntities('product');
-    return lista.sort((a,b)=> a.nombre.localeCompare(b.nombre));
+    // String(...) por las dudas: un producto adoptado del catálogo
+    // compartido puede traer el nombre como Number si Google Sheets lo
+    // interpretó como un valor numérico al guardarlo (mismo problema que
+    // ya pasó con fechas/IDs). Sin esto, un solo producto así rompe el
+    // ordenamiento (y con eso, cualquier pantalla que liste productos).
+    return lista.sort((a,b)=> String(a.nombre||'').localeCompare(String(b.nombre||'')));
   }
 
   async function guardarProducto(datos){
@@ -110,7 +115,7 @@ window.BusinessService = (function(){
 
   async function listarClientes(){
     const lista = await StorageService.listEntities('client');
-    return lista.sort((a,b)=> a.nombre.localeCompare(b.nombre));
+    return lista.sort((a,b)=> String(a.nombre||'').localeCompare(String(b.nombre||'')));
   }
   async function buscarClientePorNombre(nombre){
     const clave = _nombreLower(nombre);
@@ -538,8 +543,14 @@ window.BusinessService = (function(){
     for(const it of (items||[])){
       const existente = await StorageService.getEntity('product', it.catalog_id);
       if(existente) continue;
+      // String(...) explícito: si el nombre/código cargado en el catálogo
+      // compartido es "todo números" (ej. un código de barras usado como
+      // nombre), Google Sheets lo devuelve como Number, no como texto —
+      // eso rompía la búsqueda y el orden de la lista de productos en
+      // cuanto se adoptaba un producto así (ver Utils.buscarProductos,
+      // que ya era tolerante a esto, y listarProductos, que ahora también).
       const record = {
-        id: it.catalog_id, nombre: it.name||'', codigo: it.sku||'', categoria: it.category||'',
+        id: it.catalog_id, nombre: String(it.name||''), codigo: String(it.sku||''), categoria: String(it.category||''),
         unidad: it.unit==='kg' ? 'kg' : 'unidad', costo:0, precio:0, margenPct: it.unit==='kg' ? 0 : null,
         desde_catalogo: true
       };

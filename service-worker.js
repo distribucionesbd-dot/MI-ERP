@@ -13,7 +13,7 @@
    la versión nueva apenas detecten el service worker distinto
    (REGLA 9).
    ========================================================= */
-const CACHE_VERSION = 'v1.0.9';
+const CACHE_VERSION = 'v1.0.10';
 const CACHE_NAME = 'mi-erp-' + CACHE_VERSION;
 
 const APP_SHELL = [

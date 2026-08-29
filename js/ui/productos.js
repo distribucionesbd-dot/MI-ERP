@@ -112,7 +112,7 @@ window.UiProductos = (function(){
     const soloKg = document.getElementById('prodSoloKg').checked;
     let lista = await BusinessService.listarProductos();
     lista = lista.filter(p=>
-      (p.nombre.toLowerCase().includes(filtro) || (p.codigo||'').toLowerCase().includes(filtro) || (p.categoria||'').toLowerCase().includes(filtro)) &&
+      (String(p.nombre||'').toLowerCase().includes(filtro) || String(p.codigo||'').toLowerCase().includes(filtro) || String(p.categoria||'').toLowerCase().includes(filtro)) &&
       (!soloKg || p.unidad==='kg')
     );
 
